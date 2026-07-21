@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>よつば建設 日報確認</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<style>
+  :root{
+    --ink:#1a2b23; --sub:#5c6f65; --faint:#93a39a;
+    --paper:#f4f6f3; --card:#ffffff; --line:#dde4de;
+    --green:#1d7a55; --green-bg:#e4f2ea;
+    --amber:#a86a12; --amber-bg:#faf0dc;
+    --steel:#33526e; --steel-bg:#e8eff5;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Sans","Yu Gothic UI","Noto Sans JP",sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;}
+  .wrap{max-width:480px;margin:0 auto;padding:16px 14px 60px;}
+  header{display:flex;align-items:center;justify-content:space-between;padding:6px 2px 14px;}
+  header h1{font-size:17px;font-weight:700;letter-spacing:.02em;}
+  header h1 small{display:block;font-size:11px;font-weight:500;color:var(--sub);letter-spacing:.12em;margin-top:2px;}
+  #gearBtn{background:none;border:none;font-size:20px;color:var(--faint);padding:8px;cursor:pointer;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;}
+  .hint{font-size:12px;color:var(--sub);line-height:1.6;}
+  input[type=text],input[type=password],select{
+    width:100%;font-size:16px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);
+  }
+  .namegrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px;}
+  .namebtn{padding:13px 4px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:15px;color:var(--ink);cursor:pointer;text-align:center;}
+  .namebtn:active{background:var(--green-bg);border-color:var(--green);}
+  .grouptitle{font-size:11px;color:var(--faint);letter-spacing:.1em;margin:16px 0 6px;}
+  .topbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+  .backbtn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 14px;font-size:14px;color:var(--sub);cursor:pointer;}
+  .whois{flex:1;}
+  .whois b{font-size:18px;}
+  .whois span{font-size:12px;color:var(--sub);margin-left:6px;}
+  #monthSel{width:auto;font-size:14px;padding:9px 10px;}
+  .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 8px;text-align:center;}
+  .stat .v{font-size:20px;font-weight:700;}
+  .stat .l{font-size:10px;color:var(--sub);margin-top:2px;}
+  .day{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;}
+  .day .d1{display:flex;justify-content:space-between;align-items:baseline;}
+  .day .date{font-size:13px;font-weight:700;}
+  .day .date .wd{font-weight:500;color:var(--sub);font-size:12px;}
+  .day .hours{font-size:15px;font-weight:700;color:var(--green);}
+  .day .job{font-size:13px;margin-top:3px;line-height:1.5;}
+  .day .job .kban{color:var(--steel);font-size:11px;background:var(--steel-bg);border-radius:6px;padding:1px 6px;margin-right:6px;}
+  .tags{margin-top:5px;display:flex;flex-wrap:wrap;gap:5px;}
+  .tag{font-size:11px;border-radius:6px;padding:2px 7px;background:var(--paper);color:var(--sub);}
+  .tag.ot{background:var(--amber-bg);color:var(--amber);font-weight:700;}
+  .empty{text-align:center;color:var(--faint);font-size:13px;padding:30px 0;}
+  .updated{font-size:11px;color:var(--faint);text-align:center;margin-top:8px;}
+  #adminPane{display:none;}
+  .droparea{border:2px dashed var(--line);border-radius:14px;padding:26px 12px;text-align:center;color:var(--sub);font-size:14px;background:#fff;}
+  .droparea.on{border-color:var(--green);background:var(--green-bg);}
+  .abtn{display:block;width:100%;margin-top:12px;padding:13px;font-size:15px;border:none;border-radius:10px;background:var(--green);color:#fff;cursor:pointer;}
+  .abtn.gray{background:var(--sub);}
+  #impLog{font-size:12px;color:var(--sub);margin-top:10px;line-height:1.7;white-space:pre-wrap;}
+  .screen{display:none;}
+  .screen.on{display:block;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>日報確認<small>よつば建設工業</small></h1>
+    <button id="gearBtn" title="管理">⚙</button>
+  </header>
+
+  <!-- 画面1: 名前選択 -->
+  <div id="scrNames" class="screen on">
+    <div class="card">
+      <input type="text" id="nameSearch" placeholder="名前で探す">
+      <div id="nameList"></div>
+    </div>
+    <p class="hint">自分の名前をタップすると、月ごとの日報が見られます。表示のみで、ここから記録の変更はできません。</p>
+    <p class="updated" id="updatedTop"></p>
+  </div>
+
+  <!-- 画面2: 個人別日報 -->
+  <div id="scrPerson" class="screen">
+    <div class="topbar">
+      <button class="backbtn" onclick="showNames()">← 戻る</button>
+      <div class="whois"><b id="pName"></b><span id="pKubun"></span></div>
+      <select id="monthSel"></select>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v" id="stDays">0</div><div class="l">出勤日数</div></div>
+      <div class="stat"><div class="v" id="stHours">0</div><div class="l">合計時間</div></div>
+      <div class="stat"><div class="v" id="stOt">0</div><div class="l">残業時間</div></div>
+    </div>
+    <div id="dayList"></div>
+    <p class="updated" id="updatedP"></p>
+  </div>
+
+  <!-- 管理: 取り込み -->
+  <div id="adminPane">
+    <div class="card">
+      <p style="font-size:14px;font-weight:700;margin-bottom:8px;">取り込み(事務員用)</p>
+      <p class="hint" style="margin-bottom:12px;">保存済みの集計Excel(よつば_日報_時間集計)をここにドロップ、またはタップして選択。明細一覧の内容がスマホ側に反映されます。</p>
+      <div class="droparea" id="drop">ここにExcelをドロップ<br><span style="font-size:12px;">(タップでファイル選択)</span></div>
+      <input type="file" id="fileIn" accept=".xlsx" style="display:none;">
+      <div id="impLog"></div>
+      <button class="abtn gray" onclick="closeAdmin()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   ▼▼ Firebase設定: 在庫管理アプリ(zaiko2)と同じものに差し替え ▼▼ */
+const firebaseConfig = {
+  apiKey: "AIzaSyAp5NpMRJ6pNPMALpfDzY3BITQjw6sQ4us",
+  authDomain: "haikan-inventory.firebaseapp.com",
+  databaseURL: "https://haikan-inventory-default-rtdb.firebaseio.com",
+  projectId: "haikan-inventory",
+  storageBucket: "haikan-inventory.firebasestorage.app",
+  messagingSenderId: "266062909446",
+  appId: "1:266062909446:web:5fd58a59caba806bcc3387",
+  measurementId: "G-QCDZBBJSGN"
+};
+/* ▲▲ ここまで ▲▲
+   ================================================================ */
+const ADMIN_PIN = "0428";
+const DB_PATH = "nippo";
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let allData = {};        // { "2026-07": {updatedAt, rows:[...]}, ... }
+let curName = null, curMonth = null;
+
+const HOUR_KEYS = ["平日工場","平日現場","休日工場","休日現場","工場残業","現場残業","移動行き","移動帰り","早出","深夜","突発"];
+const OT_KEYS = ["工場残業","現場残業","早出","深夜"];
+const WD = ["日","月","火","水","木","金","土"];
+
+/* ---------- データ購読 ---------- */
+db.ref(DB_PATH).on("value", snap => {
+  allData = snap.val() || {};
+  renderNames();
+  if (curName) renderPerson();
+});
+
+/* ---------- 画面1: 名前一覧 ---------- */
+function collectNames(){
+  const map = {};   // name -> 区分
+  Object.values(allData).forEach(m => (m.rows||[]).forEach(r => { if(r.n) map[r.n] = r.k || ""; }));
+  return map;
+}
+function renderNames(){
+  const q = document.getElementById("nameSearch").value.trim();
+  const map = collectNames();
+  const names = Object.keys(map).sort((a,b)=>a.localeCompare(b,"ja"));
+  const own = names.filter(n=>map[n]==="自社" && n.includes(q));
+  const par = names.filter(n=>map[n]!=="自社" && n.includes(q));
+  let html = "";
+  if(own.length){ html += '<div class="grouptitle">自社</div><div class="namegrid">' + own.map(nameBtn).join("") + '</div>'; }
+  if(par.length){ html += '<div class="grouptitle">協力会社</div><div class="namegrid">' + par.map(nameBtn).join("") + '</div>'; }
+  if(!names.length){ html = '<p class="empty">まだデータがありません。<br>事務員さんの取り込み待ちです。</p>'; }
+  document.getElementById("nameList").innerHTML = html;
+  const months = Object.keys(allData).sort();
+  const last = months.length ? allData[months[months.length-1]] : null;
+  document.getElementById("updatedTop").textContent = last && last.updatedAt ? "最終更新: " + last.updatedAt : "";
+}
+function nameBtn(n){ return '<button class="namebtn" onclick="openPerson(\'' + n.replace(/'/g,"\\'") + '\')">' + n + '</button>'; }
+document.getElementById("nameSearch").addEventListener("input", renderNames);
+
+/* ---------- 画面2: 個人別 ---------- */
+function openPerson(n){
+  curName = n;
+  const months = Object.keys(allData).sort().reverse();
+  curMonth = months[0] || null;
+  const sel = document.getElementById("monthSel");
+  sel.innerHTML = months.map(m => '<option value="'+m+'">'+m.replace("-","年")+'月</option>').join("");
+  sel.value = curMonth;
+  document.getElementById("scrNames").classList.remove("on");
+  document.getElementById("scrPerson").classList.add("on");
+  renderPerson();
+  window.scrollTo(0,0);
+}
+document.getElementById("monthSel").addEventListener("change", e => { curMonth = e.target.value; renderPerson(); });
+function showNames(){
+  curName = null;
+  document.getElementById("scrPerson").classList.remove("on");
+  document.getElementById("scrNames").classList.add("on");
+}
+function renderPerson(){
+  const m = allData[curMonth] || {rows:[]};
+  const rows = (m.rows||[]).filter(r => r.n === curName)
+    .sort((a,b) => b.d.localeCompare(a.d));
+  document.getElementById("pName").textContent = curName + " さん";
+  document.getElementById("pKubun").textContent = rows.length ? (rows[0].k||"") : "";
+
+  const days = new Set(rows.map(r=>r.d)).size;
+  let total = 0, ot = 0;
+  rows.forEach(r => {
+    HOUR_KEYS.forEach(k => total += (r.h[k]||0));
+    OT_KEYS.forEach(k => ot += (r.h[k]||0));
+  });
+  document.getElementById("stDays").textContent = days;
+  document.getElementById("stHours").textContent = round1(total);
+  document.getElementById("stOt").textContent = round1(ot);
+
+  document.getElementById("dayList").innerHTML = rows.length ? rows.map(dayCard).join("") :
+    '<p class="empty">この月の記録はありません</p>';
+  document.getElementById("updatedP").textContent = m.updatedAt ? "最終更新: " + m.updatedAt : "";
+}
+function dayCard(r){
+  const dt = new Date(r.d + "T00:00:00");
+  const dstr = (dt.getMonth()+1) + "/" + dt.getDate() + ' <span class="wd">(' + WD[dt.getDay()] + ")</span>";
+  let total = 0; HOUR_KEYS.forEach(k => total += (r.h[k]||0));
+  const tags = [];
+  HOUR_KEYS.forEach(k => { if(r.h[k]) tags.push('<span class="tag' + (OT_KEYS.includes(k)?" ot":"") + '">' + k + " " + round1(r.h[k]) + '</span>'); });
+  if(r.s) tags.push('<span class="tag">出張</span>');
+  if(r.y) tags.push('<span class="tag">夜勤</span>');
+  if(r.f) tags.push('<span class="tag">職長: ' + r.f + '</span>');
+  return '<div class="day"><div class="d1"><span class="date">' + dstr + '</span><span class="hours">' + round1(total) + 'h</span></div>' +
+    '<div class="job">' + (r.no ? '<span class="kban">' + r.no + '</span>' : "") + esc(r.j||"") + '</div>' +
+    '<div class="tags">' + tags.join("") + '</div></div>';
+}
+function round1(v){ return Math.round(v*10)/10; }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+/* ---------- 管理(取り込み) ---------- */
+document.getElementById("gearBtn").addEventListener("click", () => {
+  const pin = prompt("管理用の番号を入力");
+  if(pin === ADMIN_PIN){ document.getElementById("adminPane").style.display = "block"; window.scrollTo(0, document.body.scrollHeight); }
+  else if(pin !== null){ alert("番号が違います"); }
+});
+function closeAdmin(){ document.getElementById("adminPane").style.display = "none"; document.getElementById("impLog").textContent = ""; }
+
+const drop = document.getElementById("drop");
+const fileIn = document.getElementById("fileIn");
+drop.addEventListener("click", () => fileIn.click());
+fileIn.addEventListener("change", e => { if(e.target.files[0]) importFile(e.target.files[0]); });
+["dragover","dragenter"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("on"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("on"); }));
+drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if(f) importFile(f); });
+
+function log(t){ document.getElementById("impLog").textContent += t + "\n"; }
+
+async function importFile(file){
+  document.getElementById("impLog").textContent = "";
+  log("読み込み中: " + file.name);
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {cellDates:true});
+    const ws = wb.Sheets["明細一覧"];
+    if(!ws){ log("エラー: 「明細一覧」シートが見つかりません。集計Excel(貼り付け済み)をドロップしてください。"); return; }
+    const aoa = XLSX.utils.sheet_to_json(ws, {header:1, raw:true});
+    const year = aoa[1] ? aoa[1][1] : null;   // B2
+    const month = aoa[1] ? aoa[1][3] : null;  // D2
+    if(!year || !month){ log("エラー: 年・月が読み取れません(明細一覧のB2・D2)。"); return; }
+    const ym = year + "-" + String(month).padStart(2,"0");
+    const rows = [];
+    for(let i = 3; i < aoa.length; i++){
+      const r = aoa[i];
+      if(!r || !r[1]) continue;               // B列 氏名なし=空行
+      const d = toDateStr(r[0]);
+      if(!d) continue;
+      const h = {};
+      const keys = ["平日工場","平日現場","休日工場","休日現場","工場残業","現場残業","移動行き","移動帰り","早出","深夜","突発"];
+      for(let k = 0; k < keys.length; k++){
+        const v = Number(r[8+k] || 0);
+        if(v) h[keys[k]] = v;
+      }
+      rows.push({
+        d: d, n: String(r[1]).trim(), k: r[2] ? String(r[2]) : "",
+        no: (r[3] && r[3] !== 0) ? String(r[3]) : "",
+        j: r[4] ? String(r[4]) : "", f: r[5] ? String(r[5]) : "",
+        s: r[6] ? 1 : 0, y: r[7] ? 1 : 0, h: h
+      });
+    }
+    if(!rows.length){ log("エラー: データ行が見つかりません。貼り付け済みのファイルか確認してください。"); return; }
+    const now = new Date();
+    const stamp = (now.getMonth()+1) + "/" + now.getDate() + " " + String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0");
+    await db.ref(DB_PATH + "/" + ym).set({ updatedAt: stamp, rows: rows });
+    const names = new Set(rows.map(x=>x.n)).size;
+    log("完了: " + ym.replace("-","年") + "月分 " + rows.length + "件(" + names + "人)を反映しました。");
+    log("この月の前回データは新しい内容に置き換わりました。");
+  }catch(err){
+    log("エラー: " + err.message);
+  }
+}
+function toDateStr(v){
+  if(v instanceof Date && !isNaN(v)) return v.getFullYear() + "-" + String(v.getMonth()+1).padStart(2,"0") + "-" + String(v.getDate()).padStart(2,"0");
+  if(typeof v === "number" && v > 40000){  // Excelシリアル値の保険
+    const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+    return d.getUTCFullYear() + "-" + String(d.getUTCMonth()+1).padStart(2,"0") + "-" + String(d.getUTCDate()).padStart(2,"0");
+  }
+  return null;
+}
+</script>
+</body>
+</html>
