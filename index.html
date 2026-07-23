@@ -51,6 +51,9 @@
   .tags{margin-top:5px;display:flex;flex-wrap:wrap;gap:5px;}
   .tag{font-size:11px;border-radius:6px;padding:2px 7px;background:var(--paper);color:var(--sub);}
   .tag.ot{background:var(--amber-bg);color:var(--amber);font-weight:700;}
+  .crew{font-size:11.5px;color:var(--sub);margin-top:4px;line-height:1.5;}
+  .fbox{background:var(--steel-bg);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--steel);}
+  .fbox b{font-size:16px;}
   .empty{text-align:center;color:var(--faint);font-size:13px;padding:30px 0;}
   .updated{font-size:11px;color:var(--faint);text-align:center;margin-top:8px;}
   #adminPane{display:none;}
@@ -92,6 +95,7 @@
       <div class="stat"><div class="v" id="stHours">0</div><div class="l">合計時間</div></div>
       <div class="stat"><div class="v" id="stOt">0</div><div class="l">残業時間</div></div>
     </div>
+    <div id="foremanBox"></div>
     <div id="dayList"></div>
     <p class="updated" id="updatedP"></p>
   </div>
@@ -126,6 +130,7 @@ const firebaseConfig = {
    ================================================================ */
 const ADMIN_PIN = "0428";
 const DB_PATH = "nippo";
+const DEFAULT_YAKUIN = ["野村","松高","高市","水元","井谷","本山","大西"];
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
@@ -187,9 +192,13 @@ function showNames(){
   document.getElementById("scrPerson").classList.remove("on");
   document.getElementById("scrNames").classList.add("on");
 }
+let curMonthRows = [], curYakuin = new Set();
+function jobKey(r){ return r.no || r.j || ""; }
 function renderPerson(){
   const m = allData[curMonth] || {rows:[]};
-  const rows = (m.rows||[]).filter(r => r.n === curName)
+  curMonthRows = m.rows || [];
+  curYakuin = new Set(m.yakuin && m.yakuin.length ? m.yakuin : DEFAULT_YAKUIN);
+  const rows = curMonthRows.filter(r => r.n === curName)
     .sort((a,b) => b.d.localeCompare(a.d));
   document.getElementById("pName").textContent = curName + " さん";
   document.getElementById("pKubun").textContent = rows.length ? (rows[0].k||"") : "";
@@ -204,6 +213,13 @@ function renderPerson(){
   document.getElementById("stHours").textContent = round1(total);
   document.getElementById("stOt").textContent = round1(ot);
 
+  const fRows = curMonthRows.filter(x => x.f === curName);
+  const fNet = fRows.filter(x => !curYakuin.has(x.n));
+  const fDays = new Set(fNet.map(x => x.d)).size;
+  document.getElementById("foremanBox").innerHTML = fRows.length
+    ? '職長として: <b>' + fDays + '</b>日・延べ <b>' + fNet.length + '</b>人(役員除く)'
+    : "";
+  document.getElementById("foremanBox").style.display = fRows.length ? "block" : "none";
   document.getElementById("dayList").innerHTML = rows.length ? rows.map(dayCard).join("") :
     '<p class="empty">この月の記録はありません</p>';
   document.getElementById("updatedP").textContent = m.updatedAt ? "最終更新: " + m.updatedAt : "";
@@ -217,8 +233,12 @@ function dayCard(r){
   if(r.s) tags.push('<span class="tag">出張</span>');
   if(r.y) tags.push('<span class="tag">夜勤</span>');
   if(r.f) tags.push('<span class="tag">職長: ' + r.f + '</span>');
+  const crew = curMonthRows.filter(x => x.d === r.d && jobKey(x) === jobKey(r)).map(x => x.n);
+  const others = crew.filter(n => n !== r.n);
+  const crewLine = others.length ? '<div class="crew">一緒: ' + others.map(esc).join("、") + '</div>' : "";
   return '<div class="day"><div class="d1"><span class="date">' + dstr + '</span><span class="hours">' + round1(total) + 'h</span></div>' +
     '<div class="job">' + (r.no ? '<span class="kban">' + r.no + '</span>' : "") + esc(r.j||"") + '</div>' +
+    crewLine +
     '<div class="tags">' + tags.join("") + '</div></div>';
 }
 function round1(v){ return Math.round(v*10)/10; }
@@ -275,11 +295,23 @@ async function importFile(file){
       });
     }
     if(!rows.length){ log("エラー: データ行が見つかりません。貼り付け済みのファイルか確認してください。"); return; }
+    let yakuin = DEFAULT_YAKUIN;
+    const wsY = wb.Sheets["職長人数"];
+    if(wsY){
+      const aoaY = XLSX.utils.sheet_to_json(wsY, {header:1, raw:true});
+      const lst = [];
+      for(let i = 1; i <= 12; i++){
+        const v = aoaY[i] && aoaY[i][35];
+        if(v) lst.push(String(v).trim());
+      }
+      if(lst.length) yakuin = lst;
+    }
     const now = new Date();
     const stamp = (now.getMonth()+1) + "/" + now.getDate() + " " + String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0");
-    await db.ref(DB_PATH + "/" + ym).set({ updatedAt: stamp, rows: rows });
+    await db.ref(DB_PATH + "/" + ym).set({ updatedAt: stamp, rows: rows, yakuin: yakuin });
     const names = new Set(rows.map(x=>x.n)).size;
     log("完了: " + ym.replace("-","年") + "月分 " + rows.length + "件(" + names + "人)を反映しました。");
+    log("役員名簿 " + yakuin.length + "名(" + (wsY ? "職長人数シートから" : "初期設定") + ")");
     log("この月の前回データは新しい内容に置き換わりました。");
   }catch(err){
     log("エラー: " + err.message);
