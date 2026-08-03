@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
+<!-- saved from url=(0045)file:///C:/Users/yotsu/Downloads/index_6.html -->
+<html lang="ja"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>よつば建設 日報確認</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script src="./よつば建設 日報確認_files/xlsx.full.min.js.ダウンロード"></script>
+<script src="./よつば建設 日報確認_files/firebase-app.js.ダウンロード"></script>
+<script src="./よつば建設 日報確認_files/firebase-database.js.ダウンロード"></script>
 <style>
   :root{
     --ink:#1a2b23; --sub:#5c6f65; --faint:#93a39a;
@@ -80,10 +80,10 @@
   <div id="scrNames" class="screen on">
     <div class="card">
       <input type="text" id="nameSearch" placeholder="名前で探す">
-      <div id="nameList"></div>
+      <div id="nameList"><div class="grouptitle">自社</div><div class="namegrid"><button class="namebtn" onclick="openPerson(&#39;アイン&#39;)">アイン</button><button class="namebtn" onclick="openPerson(&#39;ズン&#39;)">ズン</button><button class="namebtn" onclick="openPerson(&#39;ティン&#39;)">ティン</button><button class="namebtn" onclick="openPerson(&#39;トゥ&#39;)">トゥ</button><button class="namebtn" onclick="openPerson(&#39;ロン&#39;)">ロン</button><button class="namebtn" onclick="openPerson(&#39;安平&#39;)">安平</button><button class="namebtn" onclick="openPerson(&#39;井上&#39;)">井上</button><button class="namebtn" onclick="openPerson(&#39;井谷&#39;)">井谷</button><button class="namebtn" onclick="openPerson(&#39;稲垣&#39;)">稲垣</button><button class="namebtn" onclick="openPerson(&#39;花山&#39;)">花山</button><button class="namebtn" onclick="openPerson(&#39;宮本&#39;)">宮本</button><button class="namebtn" onclick="openPerson(&#39;金田&#39;)">金田</button><button class="namebtn" onclick="openPerson(&#39;五百木&#39;)">五百木</button><button class="namebtn" onclick="openPerson(&#39;光田&#39;)">光田</button><button class="namebtn" onclick="openPerson(&#39;向井&#39;)">向井</button><button class="namebtn" onclick="openPerson(&#39;高市&#39;)">高市</button><button class="namebtn" onclick="openPerson(&#39;笹本&#39;)">笹本</button><button class="namebtn" onclick="openPerson(&#39;山口&#39;)">山口</button><button class="namebtn" onclick="openPerson(&#39;山田&#39;)">山田</button><button class="namebtn" onclick="openPerson(&#39;芝&#39;)">芝</button><button class="namebtn" onclick="openPerson(&#39;戎&#39;)">戎</button><button class="namebtn" onclick="openPerson(&#39;松高&#39;)">松高</button><button class="namebtn" onclick="openPerson(&#39;松高海&#39;)">松高海</button><button class="namebtn" onclick="openPerson(&#39;松平&#39;)">松平</button><button class="namebtn" onclick="openPerson(&#39;松本&#39;)">松本</button><button class="namebtn" onclick="openPerson(&#39;上岡&#39;)">上岡</button><button class="namebtn" onclick="openPerson(&#39;水元&#39;)">水元</button><button class="namebtn" onclick="openPerson(&#39;西岡豪&#39;)">西岡豪</button><button class="namebtn" onclick="openPerson(&#39;西岡星&#39;)">西岡星</button><button class="namebtn" onclick="openPerson(&#39;川元&#39;)">川元</button><button class="namebtn" onclick="openPerson(&#39;相原&#39;)">相原</button><button class="namebtn" onclick="openPerson(&#39;大西&#39;)">大西</button><button class="namebtn" onclick="openPerson(&#39;大田&#39;)">大田</button><button class="namebtn" onclick="openPerson(&#39;池内&#39;)">池内</button><button class="namebtn" onclick="openPerson(&#39;竹本&#39;)">竹本</button><button class="namebtn" onclick="openPerson(&#39;津田&#39;)">津田</button><button class="namebtn" onclick="openPerson(&#39;田原&#39;)">田原</button><button class="namebtn" onclick="openPerson(&#39;田中&#39;)">田中</button><button class="namebtn" onclick="openPerson(&#39;渡部貴&#39;)">渡部貴</button><button class="namebtn" onclick="openPerson(&#39;渡部佑&#39;)">渡部佑</button><button class="namebtn" onclick="openPerson(&#39;筒井&#39;)">筒井</button><button class="namebtn" onclick="openPerson(&#39;内田&#39;)">内田</button><button class="namebtn" onclick="openPerson(&#39;福本&#39;)">福本</button><button class="namebtn" onclick="openPerson(&#39;本山&#39;)">本山</button><button class="namebtn" onclick="openPerson(&#39;野村&#39;)">野村</button><button class="namebtn" onclick="openPerson(&#39;矢内&#39;)">矢内</button></div><div class="grouptitle">協力会社</div><div class="namegrid"><button class="namebtn" onclick="openPerson(&#39;カズキ農園1&#39;)">カズキ農園1</button><button class="namebtn" onclick="openPerson(&#39;カズキ農園2&#39;)">カズキ農園2</button><button class="namebtn" onclick="openPerson(&#39;カズキ農園3&#39;)">カズキ農園3</button><button class="namebtn" onclick="openPerson(&#39;カズキ農園4&#39;)">カズキ農園4</button><button class="namebtn" onclick="openPerson(&#39;園部&#39;)">園部</button><button class="namebtn" onclick="openPerson(&#39;河野&#39;)">河野</button><button class="namebtn" onclick="openPerson(&#39;叶世&#39;)">叶世</button><button class="namebtn" onclick="openPerson(&#39;亀田&#39;)">亀田</button><button class="namebtn" onclick="openPerson(&#39;栗原&#39;)">栗原</button><button class="namebtn" onclick="openPerson(&#39;光芳&#39;)">光芳</button><button class="namebtn" onclick="openPerson(&#39;高井&#39;)">高井</button><button class="namebtn" onclick="openPerson(&#39;坂口&#39;)">坂口</button><button class="namebtn" onclick="openPerson(&#39;山下&#39;)">山下</button><button class="namebtn" onclick="openPerson(&#39;山内&#39;)">山内</button><button class="namebtn" onclick="openPerson(&#39;松原&#39;)">松原</button><button class="namebtn" onclick="openPerson(&#39;城村&#39;)">城村</button><button class="namebtn" onclick="openPerson(&#39;西野&#39;)">西野</button><button class="namebtn" onclick="openPerson(&#39;石田&#39;)">石田</button><button class="namebtn" onclick="openPerson(&#39;二神&#39;)">二神</button><button class="namebtn" onclick="openPerson(&#39;畑中&#39;)">畑中</button><button class="namebtn" onclick="openPerson(&#39;八木瞬&#39;)">八木瞬</button><button class="namebtn" onclick="openPerson(&#39;八木裕&#39;)">八木裕</button><button class="namebtn" onclick="openPerson(&#39;米井&#39;)">米井</button></div></div>
     </div>
     <p class="hint">自分の名前をタップすると、月ごとの日報が見られます。表示のみで、ここから記録の変更はできません。</p>
-    <p class="updated" id="updatedTop"></p>
+    <p class="updated" id="updatedTop">最終更新: 8/3 11:57</p>
   </div>
 
   <!-- 画面2: 個人別日報 -->
@@ -209,8 +209,9 @@ function renderPerson(){
   const days = new Set(rows.filter(r=>!r.off).map(r=>r.d)).size;
   let total = 0, ot = 0;
   rows.forEach(r => {
-    HOUR_KEYS.forEach(k => total += (r.h[k]||0));
-    OT_KEYS.forEach(k => ot += (r.h[k]||0));
+    const rh = r.h || {};
+    HOUR_KEYS.forEach(k => total += (rh[k]||0));
+    OT_KEYS.forEach(k => ot += (rh[k]||0));
   });
   document.getElementById("stDays").textContent = days;
   document.getElementById("stHours").textContent = round1(total);
@@ -230,10 +231,11 @@ function renderPerson(){
 function dayCard(r){
   const dt = new Date(r.d + "T00:00:00");
   const dstr = (dt.getMonth()+1) + "/" + dt.getDate() + ' <span class="wd">(' + WD[dt.getDay()] + ")</span>";
-  let total = 0; HOUR_KEYS.forEach(k => total += (r.h[k]||0));
+  const rh = r.h || {};
+  let total = 0; HOUR_KEYS.forEach(k => total += (rh[k]||0));
   const tags = [];
   if(r.off) tags.push('<span class="tag off">休み</span>');
-  HOUR_KEYS.forEach(k => { if(r.h[k]) tags.push('<span class="tag' + (OT_KEYS.includes(k)?" ot":"") + '">' + k + " " + round1(r.h[k]) + '</span>'); });
+  HOUR_KEYS.forEach(k => { if(rh[k]) tags.push('<span class="tag' + (OT_KEYS.includes(k)?" ot":"") + '">' + k + " " + round1(rh[k]) + '</span>'); });
   if(r.s) tags.push('<span class="tag">出張</span>');
   if(r.y) tags.push('<span class="tag">夜勤</span>');
   if(r.f) tags.push('<span class="tag">職長: ' + r.f + '</span>');
@@ -331,5 +333,6 @@ function toDateStr(v){
   return null;
 }
 </script>
-</body>
-</html>
+
+
+</body></html>
