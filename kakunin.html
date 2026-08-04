@@ -164,11 +164,15 @@ function workNetOf(r){
   const w=WORK_KINDS.reduce((a,k)=>a+(h[k]||0),0);
   return Math.max(0, w-(r.late||0)-(r.early||0));
 }
-/* 本人も1に数える。役員7名と休みの人は数えない。実働4時間以下は0.5 */
+/* 本人も数える。役員7名と休みの人は数えない。
+   実働が0の人（移動・残業だけの日）も数えない。
+   実働が少しでもあれば、4時間以下は0.5、それより上は1.0 */
 function allowUnit(r){
   if(!r || r.off) return 0;
   if(YAKUIN.indexOf(r.n)>=0) return 0;
-  return workNetOf(r)<=ALLOW_BORDER ? 0.5 : 1;
+  const w=workNetOf(r);
+  if(w<=0) return 0;
+  return w<=ALLOW_BORDER ? 0.5 : 1;
 }
 function autoAllow(rs){ return (rs||[]).reduce((a,r)=>a+allowUnit(r),0); }
 /* 職長がスマホで直した値・事務所が直した値があれば、それを使う */
@@ -280,7 +284,7 @@ function renderView(){
     '<div class="step">職長手当（'+(V.month||"").replace("-","年")+'月）</div>'+
     '<div class="n">'+allowTx(payN)+'<span>工数 ／ 日報から自動で計算</span></div>'+
     '<div style="margin-top:12px">'+payRows+'</div>'+
-    '<div class="note">自分を含めて数え、役員7名と休みの人は数えません。1人あたり、実働（平日・休日の工場現場から遅刻・早退を引いた分）が4時間以下なら0.5、それより上なら1.0です。</div>':"";
+    '<div class="note">自分を含めて数え、役員7名と休みの人は数えません。実働（平日・休日の工場現場から遅刻・早退を引いた分）がない人も数えません。実働がある人は、4時間以下なら0.5、それより上なら1.0です。移動や残業だけの日は、必要なら職長が送信のときに手で足しています。</div>':"";
 
   document.getElementById("vSentList").innerHTML=keys.length?keys.map(k=>{
     const g=bt[k], r=g[0];

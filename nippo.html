@@ -588,11 +588,15 @@ function workNetFor(n){
         -(S.checks["遅刻"]?S.lateH:0)-(S.checks["早退"]?S.earlyH:0);
   return Math.max(0,w);
 }
-/* 本人も1に数える。役員7名は数えない。休みの人（S.off）は入らない */
+/* 本人も数える。役員7名は数えない。休みの人（S.off）は入らない。
+   実働が0の人（移動・残業だけの日）も数えない。
+   実働が少しでもあれば、4時間以下は0.5、それより上は1.0 */
 function autoAllow(){
   return S.sel.reduce((a,n)=>{
     if(YAKUIN.indexOf(n)>=0) return a;
-    return a + (workNetFor(n)<=ALLOW_BORDER ? 0.5 : 1);
+    const w=workNetFor(n);
+    if(w<=0) return a;
+    return a + (w<=ALLOW_BORDER ? 0.5 : 1);
   },0);
 }
 function allowNow(){ return S.allowE ? S.allow : autoAllow(); }
@@ -1163,12 +1167,16 @@ function renderAllow(){
   document.getElementById("cfmAllowLbl").textContent=S.allowE?"手で直した数":"自動で計算した数";
   document.getElementById("cfmAllowRow").classList.toggle("on",S.allowE);
   document.getElementById("cfmAllowReset").style.display=S.allowE?"block":"none";
-  const half=S.sel.filter(n=>YAKUIN.indexOf(n)<0&&workNetFor(n)<=ALLOW_BORDER);
   const yak=S.sel.filter(n=>YAKUIN.indexOf(n)>=0);
+  const zero=S.sel.filter(n=>YAKUIN.indexOf(n)<0&&workNetFor(n)<=0);
+  const half=S.sel.filter(n=>{ const w=workNetFor(n);
+    return YAKUIN.indexOf(n)<0 && w>0 && w<=ALLOW_BORDER; });
   document.getElementById("cfmAllowNote").innerHTML=
-    "自動計算 "+allowTx(auto)+"（"+esc(S.foreman)+"さん本人を含めて数え、実働4時間以下の人は0.5にしています）"+
+    "自動計算 "+allowTx(auto)+"（"+esc(S.foreman)+"さん本人を含めて数えています）"+
     (yak.length?"<br>役員のため数えていない人："+yak.map(esc).join("・"):"")+
-    (half.length?"<br>0.5で数えた人："+half.map(esc).join("・"):"")+
+    (zero.length?"<br>実働がないので数えていない人："+zero.map(esc).join("・")+
+      "（移動・残業だけの日。必要なら下の数字を手で足してください）":"")+
+    (half.length?"<br>実働4時間以下なので0.5で数えた人："+half.map(esc).join("・"):"")+
     (S.off.length?"<br>休みの人は数えていません："+S.off.map(o=>esc(o.name)).join("・"):"")+
     "<br>おかしいと思ったら、上をタップして直せます。";
 }

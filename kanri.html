@@ -249,7 +249,7 @@
       <div id="pList">
         <div class="lead"><b id="pLeadMonth"></b>　紙の日報と同じ列順です。1日＝8時間で人工（にんく）に換算しています。</div>
         <div class="wrapT"><table id="pTable" class="paper"></table></div>
-        <div class="note">合計時間は、遅刻・早退を引いた後の時間です。<b>職長手当は工数</b>で数えます（本人を含み、役員7名と休みの人は数えません。1人あたり実働4時間以下は0.5、それより上は1.0）。職長がスマホで直した送信は、その値を使います。</div>
+        <div class="note">合計時間は、遅刻・早退を引いた後の時間です。<b>職長手当は工数</b>で数えます（本人を含み、役員7名・休みの人・実働がない人は数えません。1人あたり実働4時間以下は0.5、それより上は1.0）。移動や残業だけの日は数えないので、必要なときは職長がスマホで手入力します。職長が直した送信は、その値を使います。</div>
       </div>
       <div id="pOne" style="display:none">
         <div class="onehd">
@@ -257,7 +257,7 @@
           <b id="oneName"></b><span id="oneMonth"></span>
         </div>
         <div class="figs" id="oneFigs"></div>
-        <div class="lead" id="oneNote">人工は平日・休日の実働（工場・現場）÷8。残業・移動・早出・深夜・突発は人工に含めず、それぞれ合計しています。職長手当は工数（本人を含み、役員7名と休みの人は除く。実働4時間以下は0.5）。</div>
+        <div class="lead" id="oneNote">人工は平日・休日の実働（工場・現場）÷8。残業・移動・早出・深夜・突発は人工に含めず、それぞれ合計しています。職長手当は工数（本人を含み、役員7名・休みの人・実働がない人は除く。実働4時間以下は0.5）。</div>
         <div class="sec-lbl">時間の区分別</div>
         <div id="oneKinds"></div>
         <div class="sec-lbl">日ごとの明細</div>
@@ -414,11 +414,15 @@ function workNetOf(r){
   const w = WORK_KINDS.reduce((a,k)=>a+(h[k]||0),0);
   return Math.max(0, w - (r.late||0) - (r.early||0));
 }
-/* 1人あたりのカウント。休み・役員は0、実働4時間以下は0.5、それより上は1.0 */
+/* 1人あたりのカウント。休み・役員は0。
+   実働が0の人（移動・残業だけの日）も数えない。
+   実働が少しでもあれば、4時間以下は0.5、それより上は1.0 */
 function allowUnit(r){
   if(!r || r.off) return 0;
   if(YAKUIN.indexOf(r.n) >= 0) return 0;
-  return workNetOf(r) <= ALLOW_BORDER ? 0.5 : 1;
+  const w = workNetOf(r);
+  if(w <= 0) return 0;
+  return w <= ALLOW_BORDER ? 0.5 : 1;
 }
 function autoAllow(batchRows){
   return (batchRows||[]).reduce((a,r)=>a+allowUnit(r), 0);
@@ -1244,7 +1248,7 @@ function openEdit(key){
     wrap.style.display = "block";
     document.getElementById("eAllow").value = cur ? String(Math.round(cur*10)/10) : "";
     document.getElementById("eAllowNote").innerHTML =
-      "自動計算は <b>"+allowTx(auto)+"</b>（本人を含み、役員7名と休みの人は数えません。実働4時間以下は0.5）。"+
+      "自動計算は <b>"+allowTx(auto)+"</b>（本人を含み、役員7名・休みの人・実働がない人は数えません。実働4時間以下は0.5）。"+
       (manual ? "今は<b>手で直した値</b>が入っています。" : "空欄にすると自動計算に戻ります。")+
       "　この送信 "+brows.length+"行 ぜんぶに反映されます。";
   } else {
