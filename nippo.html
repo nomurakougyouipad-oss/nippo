@@ -236,7 +236,6 @@
   <div class="menu">
     <button class="mbtn p" onclick="goSend()">日報を送る<div class="s">職長 ─ 今日の分を入力</div></button>
     <button class="mbtn g" onclick="goJobs()">工事一覧<div class="s" id="topJobsSub">注番と件名を調べる</div></button>
-    <button class="mbtn g" onclick="goAdmin()">管理<div class="s">事務所用・暗証番号</div></button>
   </div>
   <div class="lastsend" id="topLast"></div>
 </div>
@@ -371,19 +370,6 @@
   </div>
 </div>
 
-<!-- ===================== 管理（暗証番号） ===================== -->
-<div id="scAdmin" class="screen">
-  <div class="bar-top"><button class="bk" onclick="goTop()">戻る</button><span class="tt">管理</span></div>
-  <div class="wrap">
-    <div class="note" style="margin-top:0">事務所用です。暗証番号を入れてください。</div>
-    <input type="password" id="pin" inputmode="numeric" maxlength="8"
-      style="margin-top:14px;text-align:center;font-size:26px;letter-spacing:.4em">
-    <button class="btn" style="margin-top:12px" onclick="tryPin()">開く</button>
-    <div style="color:var(--mag-d);font-size:14px;margin-top:10px;min-height:20px" id="pinErr"></div>
-    <div class="note">パソコンの管理画面では、明細一覧・個人別・工事別工数・Excel出力が使えます。</div>
-  </div>
-</div>
-
 <!-- ===================== シート ===================== -->
 <div class="bd" id="bd" onclick="closeSheet()"></div>
 
@@ -505,7 +491,6 @@ const WORK_KINDS = ["平日工場","平日現場","休日工場","休日現場"]
 const MGROUPS = ["自社","常駐協力","外注協力"];
 const ALLOW_BORDER = 4;   /* 実働がこの時間以下なら 0.5 */
 const STALE_DAYS = 30;
-const ADMIN_PIN = "0428";
 
 /* ================== データ ================== */
 let WORKERS=[], JOBS=[], TEAMS={}, STATIONED=new Set(), CLOSED=[];
@@ -657,7 +642,7 @@ db.ref("nippo").on("value", snap=>{
 });
 
 /* ================== 画面遷移 ================== */
-const SCREENS=["scTop","scStep1","scStep2","scConfirm","scDone","scJobs","scAdmin"];
+const SCREENS=["scTop","scStep1","scStep2","scConfirm","scDone","scJobs"];
 function showScreen(id){
   SCREENS.forEach(x=>document.getElementById(x).classList.toggle("on", x===id));
   window.scrollTo(0,0);
@@ -665,7 +650,6 @@ function showScreen(id){
 function goTop(){ showScreen("scTop"); renderTop(); }
 function goSend(){ showScreen("scStep1"); renderAll(); }
 function goJobs(){ showScreen("scJobs"); renderJobsPage(); }
-function goAdmin(){ showScreen("scAdmin"); document.getElementById("pin").value=""; document.getElementById("pinErr").textContent=""; }
 function goStep2(){ if(!canStep2()) return; showScreen("scStep2"); renderAll(); }
 
 /* ================== シート ================== */
@@ -1352,18 +1336,6 @@ function doClose(){
   const no=S.closeTarget; if(!no){ closeSheet(); return; }
   db.ref("master/closed").set(CLOSED.concat([no])).then(closeSheet);
 }
-
-/* ================== 管理 ================== */
-function tryPin(){
-  if(document.getElementById("pin").value===ADMIN_PIN){
-    document.getElementById("pinErr").textContent="";
-    alert("管理画面はパソコンでお使いください。\n（明細一覧・個人別・工事別工数・Excel出力）");
-  } else {
-    document.getElementById("pinErr").textContent="番号が違います";
-    document.getElementById("pin").value="";
-  }
-}
-document.getElementById("pin").addEventListener("keydown",e=>{ if(e.key==="Enter") tryPin(); });
 
 /* ================== 起動 ================== */
 renderTop();
