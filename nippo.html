@@ -475,7 +475,7 @@ let ready=false;
 
 let S = {
   date: todayStr(), foreman:null, job:null, jobFree:null, kubun:"現場",
-  sel:[], off:[], guests:[], all:{}, ovr:{}, more:false,
+  sel:[], off:[], guests:[], all:{}, ovr:{}, more:false, foremanAuto:false,
   checks:{出張:false,夜勤:false,遅刻:false,早退:false}, lateH:0, earlyH:0,
   jobTab:"fixed", pad:"0", padTarget:null, calY:0, calM:0, closeTarget:null
 };
@@ -636,10 +636,29 @@ function renderForemanSheet(){
   document.getElementById("shForemanList").innerHTML=selfNames().sort(byLen).map(n=>
     '<button class="nchip'+(S.foreman===n?" on":"")+'" data-n="'+esc(n)+'">'+esc(n)+'</button>').join("");
   document.querySelectorAll("#shForemanList .nchip").forEach(b=>{
-    b.onclick=()=>{ S.foreman=b.dataset.n; closeSheet(); renderAll(); };
+    b.onclick=()=>{
+      const prev = S.foreman;
+      const n = b.dataset.n;
+      S.foreman = n;
+      // 前の職長が「自動で入っただけ」なら外す
+      if(prev && prev!==n && S.foremanAuto && S.sel.indexOf(prev)>=0){
+        S.sel = S.sel.filter(x=>x!==prev);
+      }
+      // 新しい職長をメンバーに入れる（休みの人は入れない）
+      if(S.sel.indexOf(n)<0 && !S.off.some(o=>o.name===n)){
+        S.sel = S.sel.concat([n]);
+        S.foremanAuto = true;
+      } else {
+        S.foremanAuto = false;
+      }
+      closeSheet(); renderAll();
+    };
   });
 }
-function clearForeman(){ S.foreman=null; closeSheet(); renderAll(); }
+function clearForeman(){
+  if(S.foreman && S.foremanAuto) S.sel = S.sel.filter(x=>x!==S.foreman);
+  S.foreman=null; S.foremanAuto=false; closeSheet(); renderAll();
+}
 
 /* ---- 工事 ---- */
 function renderJob(){
@@ -712,7 +731,14 @@ function renderKubun(){
 }
 function applyTeam(){
   const t=TEAMS[S.kubun];
-  if(t&&t.length) S.sel=t.filter(n=>!S.off.some(o=>o.name===n));
+  if(t&&t.length){
+    S.sel=t.filter(n=>!S.off.some(o=>o.name===n));
+    // 職長が自動で入っていたなら、班を切り替えても残す
+    if(S.foreman && S.foremanAuto && S.sel.indexOf(S.foreman)<0
+       && !S.off.some(o=>o.name===S.foreman)){
+      S.sel=S.sel.concat([S.foreman]);
+    }
+  }
 }
 
 /* ---- メンバー ---- */
@@ -740,8 +766,12 @@ function renderMembers(){
     : "工場・設計・緑化の常任メンバーは隠しています。上の「他の人を追加」から呼べます。";
 }
 function toggleSel(n){
-  if(S.sel.indexOf(n)>=0) S.sel=S.sel.filter(x=>x!==n);
-  else { S.sel=S.sel.concat([n]); S.off=S.off.filter(o=>o.name!==n); }
+  if(S.sel.indexOf(n)>=0){
+    S.sel=S.sel.filter(x=>x!==n);
+    if(n===S.foreman) S.foremanAuto=false;   // 職長を手で外した＝事務所作業など
+  } else {
+    S.sel=S.sel.concat([n]); S.off=S.off.filter(o=>o.name!==n);
+  }
 }
 function renderMemberSheet(){
   const q=(document.getElementById("memberSearch").value||"").trim();
@@ -803,7 +833,8 @@ function renderOffSheet(){
   document.querySelectorAll("#offCandidates .nchip").forEach(b=>{
     b.onclick=()=>{ const n=b.dataset.n;
       if(S.off.some(o=>o.name===n)) S.off=S.off.filter(o=>o.name!==n);
-      else { S.off.push({name:n,reason:"休み"}); S.sel=S.sel.filter(x=>x!==n); }
+      else { S.off.push({name:n,reason:"休み"}); S.sel=S.sel.filter(x=>x!==n);
+             if(n===S.foreman) S.foremanAuto=false; }
       renderOffSheet(); renderAll(); };
   });
 }
