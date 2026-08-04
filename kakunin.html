@@ -52,14 +52,33 @@
     border:1px solid var(--line-s);border-radius:2px;font-size:17px;cursor:pointer;}
   .vtabs button.on{background:var(--green);color:#f3f2f2;border-color:var(--green);font-weight:600;}
 
-  .bighours{font-size:46px;font-weight:700;line-height:1.1;}
-  .bighours span{font-size:15px;font-weight:400;color:var(--muted);margin-left:10px;}
+  /* ---- 月合計：出勤日数と残業だけ大きく。総合計は出さない ---- */
+  .figs2{display:flex;gap:34px;flex-wrap:wrap;align-items:baseline;margin-top:6px;}
+  .figs2 .f .l{font-size:13px;color:var(--muted);}
+  .figs2 .f .v{font-size:42px;font-weight:700;line-height:1.1;}
+  .figs2 .f .v span{font-size:16px;font-weight:400;color:var(--muted);margin-left:4px;}
+  .figs2 .f .v.z{color:var(--dim);}
+  .klist{margin-top:20px;}
+  .klist .kr{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+    padding:9px 0;border-bottom:1px solid var(--line-w);}
+  .klist .kr .n{font-size:16px;}
+  .klist .kr .t{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;}
+  .klist .kr.mn .n,.klist .kr.mn .t{color:var(--mag-d);}
+  .sec-lbl{font-size:13px;color:var(--muted);font-weight:600;margin:26px 0 4px;}
+
+  /* ---- 1日ごと：内訳を同じくらいの大きさで横に並べる ---- */
   .vday{padding:14px 0;border-bottom:1px solid var(--line-w);}
+  .vday .top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;}
   .vday .d{font-size:14px;color:var(--muted);}
+  .vday .tot{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;}
   .vday .j{margin-top:4px;font-size:17px;}
   .vday .j .no{font:600 16px/1.2 ui-monospace,monospace;letter-spacing:.05em;color:var(--green);margin-right:8px;}
-  .vday .h{margin-top:4px;font-size:14px;color:var(--muted);}
+  .vday .h{margin-top:6px;font-size:12px;color:var(--faint);}
   .vday.off .j{color:var(--muted);}
+  .brk{margin-top:6px;font-size:15.5px;line-height:1.8;color:var(--ink);}
+  .brk .mn{color:var(--mag-d);font-weight:600;}
+  .brk .sep{color:var(--faint);margin:0 5px;}
+  .brk .z{color:var(--faint);}
   .vsent{padding:15px 0;border-bottom:1px solid var(--line-w);}
   .vsent .at{font-size:13px;color:var(--faint);}
   .vsent .j{margin-top:5px;font-size:17px;}
@@ -102,8 +121,10 @@
     <div class="vtabs" id="vTabs"></div>
     <div id="vMe">
       <div style="font-size:13px;color:var(--muted)" id="vMonthLbl"></div>
-      <div class="bighours" id="vHours"></div>
-      <div id="vDays" style="margin-top:18px"></div>
+      <div class="figs2" id="vFigs"></div>
+      <div class="klist" id="vKinds"></div>
+      <div class="sec-lbl">日ごとの記録</div>
+      <div id="vDays"></div>
       <div class="paybox" id="vPay"></div>
       <div class="note">ここは自分の記録だけです。数字が違うときは職長か事務所に言ってください。</div>
     </div>
@@ -131,6 +152,9 @@ const db = firebase.database();
 
 const PAPER_KINDS = ["平日工場","平日現場","休日工場","休日現場","工場残業","現場残業","移動行き","移動帰り","早出","深夜","突発"];
 const WORK_KINDS = ["平日工場","平日現場","休日工場","休日現場"];
+const OT_KINDS   = ["工場残業","現場残業"];   /* 「残業」として大きく出す分 */
+/* 月合計の一覧に並べる項目（残業は上に大きく出すので、ここには入れない） */
+const LIST_KINDS = PAPER_KINDS.filter(k=>OT_KINDS.indexOf(k)<0);
 const WD = ["日","月","火","水","木","金","土"];
 const YAKUIN = ["野村","松高","高市","水元","井谷","本山","大西"];
 const MGROUPS = ["自社","常駐協力","外注協力"];
@@ -184,6 +208,15 @@ function batchAllow(rs){
   return autoAllow(rs);
 }
 function allowTx(v){ return (Math.round((v||0)*10)/10).toFixed(1); }
+
+/* 1日ぶんの内訳を、同じくらいの大きさで横に並べる */
+function brkHtml(r){
+  const h=r.h||{};
+  const p=PAPER_KINDS.filter(k=>h[k]).map(k=>'<span>'+esc(k)+' '+f1(h[k])+'</span>');
+  if(r.late)  p.push('<span class="mn">遅刻 −'+f1(r.late)+'</span>');
+  if(r.early) p.push('<span class="mn">早退 −'+f1(r.early)+'</span>');
+  return p.length ? p.join('<span class="sep">／</span>') : '<span class="z">―</span>';
+}
 
 db.ref("nippo").on("value", snap=>{
   ALLDATA = snap.val() || {};
@@ -254,18 +287,33 @@ function renderView(){
   document.getElementById("vSent").style.display=V.tab==="sent"?"block":"none";
 
   const work=mine.filter(r=>!r.off);
-  const total=work.reduce((a,r)=>a+netOf(r),0);
   const days=new Set(work.map(r=>r.d)).size;
   document.getElementById("vMonthLbl").textContent=(V.month||"").replace("-","年")+"月";
-  document.getElementById("vHours").innerHTML=f1(total)+'<span>時間 ／ '+days+'日出勤</span>';
-  document.getElementById("vDays").innerHTML=mine.length?mine.map(r=>{
-    const h=r.h||{};
-    const d=PAPER_KINDS.filter(k=>h[k]).map(k=>k+" "+f1(h[k])).join(" ・ ");
-    return '<div class="vday'+(r.off?" off":"")+'"><div class="d">'+dShort(r.d)+'</div>'+
+
+  /* 月合計：大きく出すのは「出勤日数」と「残業」だけ。総合計は出さない */
+  const sum=k=>work.reduce((a,r)=>a+((r.h&&r.h[k])||0),0);
+  const ot=OT_KINDS.reduce((a,k)=>a+sum(k),0);
+  document.getElementById("vFigs").innerHTML=
+    '<div class="f"><div class="l">出勤日数</div><div class="v'+(days?"":" z")+'">'+days+'<span>日</span></div></div>'+
+    '<div class="f"><div class="l">残業</div><div class="v'+(ot?"":" z")+'">'+f1(ot)+'</div></div>';
+
+  const lateT=work.reduce((a,r)=>a+(r.late||0),0);
+  const earlyT=work.reduce((a,r)=>a+(r.early||0),0);
+  const krows=LIST_KINDS.filter(k=>sum(k)).map(k=>
+    '<div class="kr"><span class="n">'+esc(k)+'</span><span class="t">'+f1(sum(k))+'</span></div>');
+  if(lateT)  krows.push('<div class="kr mn"><span class="n">遅刻</span><span class="t">−'+f1(lateT)+'</span></div>');
+  if(earlyT) krows.push('<div class="kr mn"><span class="n">早退</span><span class="t">−'+f1(earlyT)+'</span></div>');
+  document.getElementById("vKinds").innerHTML=krows.join("")
+    || '<div class="note" style="margin-top:8px">この月の時間の記録はありません</div>';
+
+  document.getElementById("vDays").innerHTML=mine.length?mine.map(r=>
+    '<div class="vday'+(r.off?" off":"")+'">'+
+      '<div class="top"><span class="d">'+dShort(r.d)+'</span>'+
+        (r.off?'':'<span class="tot">'+f1(netOf(r))+'</span>')+'</div>'+
       '<div class="j">'+(r.no?'<span class="no">'+esc(r.no)+'</span>':'')+esc(r.j||"")+'</div>'+
-      '<div class="h">'+(r.off?esc(r.offReason||"休み"):esc(d||"―"))+
-      (r.f?" ─ 職長 "+esc(r.f):"")+'</div></div>';
-  }).join(""):'<div class="empty">この月の記録はありません</div>';
+      '<div class="brk">'+(r.off?'<span class="mn">'+esc(r.offReason||"休み")+'</span>':brkHtml(r))+'</div>'+
+      (r.f?'<div class="h">職長 '+esc(r.f)+'</div>':'')+
+    '</div>').join(""):'<div class="empty">この月の記録はありません</div>';
 
   const bt={};
   sent.forEach(r=>{ const k=r.batch||(r.d+"|"+jobKey(r)); (bt[k]=bt[k]||[]).push(r); });

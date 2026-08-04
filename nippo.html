@@ -114,6 +114,12 @@
   .prow .nm em{font-style:normal;font-size:13px;color:var(--green);margin-left:8px;}
   .prow .tt{font-size:22px;font-weight:600;}
   .prow .dt{margin-top:5px;font-size:13.5px;color:var(--faint);}
+  .prow .tap{margin-top:5px;font-size:12.5px;color:var(--faint);}
+  /* 内訳は小さい灰色をやめて、合計と同じくらいの大きさで横並びに */
+  .brk{margin-top:6px;font-size:15.5px;line-height:1.8;color:var(--ink);}
+  .brk .mn{color:var(--mag-d);font-weight:600;}
+  .brk .sep{color:var(--faint);margin:0 5px;}
+  .brk .z{color:var(--faint);}
 
   .btn{width:100%;min-height:60px;padding:16px;background:var(--green);color:#f3f2f2;
     border:none;border-radius:2px;font-size:19px;font-weight:600;cursor:pointer;}
@@ -534,6 +540,14 @@ function minusFor(n){ return lateFor(n)+earlyFor(n); }
 function netFor(n){ return Math.max(0, totalOf(hoursFor(n)) - minusFor(n)); }
 /* その人に何か個別の入力があるか（時間の上書き・遅刻・早退） */
 function hasOwn(n){ return !!S.ovr[n] || !!S.late[n] || !!S.early[n]; }
+/* 1人ぶんの内訳を、同じくらいの大きさで横に並べる */
+function brkFor(n){
+  const h=hoursFor(n);
+  const p=PAPER_KINDS.filter(k=>h[k]).map(k=>'<span>'+esc(k)+' '+f1(h[k])+'</span>');
+  if(S.late[n])  p.push('<span class="mn">遅刻 −'+f1(S.late[n])+'</span>');
+  if(S.early[n]) p.push('<span class="mn">早退 −'+f1(S.early[n])+'</span>');
+  return p.length ? p.join('<span class="sep">／</span>') : '<span class="z">未入力</span>';
+}
 function netOf(r){ return Math.max(0, totalOf(r.h)-(r.late||0)-(r.early||0)); }
 function dLabel(ds){ const d=new Date(ds+"T00:00:00");
   return isNaN(d)?ds:(d.getFullYear()+"年"+(d.getMonth()+1)+"月"+d.getDate()+"日（"+WD[d.getDay()]+"）"); }
@@ -1045,15 +1059,12 @@ function renderPersons(){
     return;
   }
   document.getElementById("fPersonRows").innerHTML=S.sel.map(n=>{
-    const h=hoursFor(n), ed=hasOwn(n);
-    const parts=ALL_KINDS.filter(k=>h[k]).map(k=>k+" "+f1(h[k]));
-    if(S.late[n])  parts.push("遅刻 −"+f1(S.late[n]));
-    if(S.early[n]) parts.push("早退 −"+f1(S.early[n]));
-    const detail=parts.join(" ・ ")||"未入力";
+    const ed=hasOwn(n);
     return '<button class="prow'+(ed?" ed":"")+'" data-n="'+esc(n)+'">'+
       '<div class="t1"><span class="nm">'+esc(n)+(ed?'<em>個別</em>':'')+'</span>'+
       '<span class="tt">'+f1(netFor(n))+'</span></div>'+
-      '<div class="dt">'+esc(detail)+'（タップして直す）</div></button>';
+      '<div class="brk">'+brkFor(n)+'</div>'+
+      '<div class="tap">タップして直す</div></button>';
   }).join("");
   document.querySelectorAll("#fPersonRows .prow").forEach(b=>{
     b.onclick=()=>openPad(b.dataset.n, MAIN_KINDS.filter(k=>S.all[k])[0]||"平日現場");
@@ -1166,13 +1177,9 @@ function goConfirm(){
   document.getElementById("cfmPeople").textContent=S.sel.length+"人の時間";
   document.getElementById("cfmTotal").textContent="合計 "+f1(grand);
   document.getElementById("cfmRows").innerHTML=S.sel.map(n=>{
-    const h=hoursFor(n), ed=hasOwn(n);
-    const parts=ALL_KINDS.filter(k=>h[k]).map(k=>k+" "+f1(h[k]));
-    if(S.late[n])  parts.push("遅刻 −"+f1(S.late[n]));
-    if(S.early[n]) parts.push("早退 −"+f1(S.early[n]));
-    const d=parts.join(" ・ ")||"未入力";
-    return '<div class="srow"><div><div class="n">'+esc(n)+(ed?'<em>個別</em>':'')+'</div>'+
-      '<div class="d">'+esc(d)+'</div></div><div class="t">'+f1(netFor(n))+'</div></div>';
+    const ed=hasOwn(n);
+    return '<div class="srow"><div style="flex:1;min-width:0"><div class="n">'+esc(n)+(ed?'<em>個別</em>':'')+'</div>'+
+      '<div class="brk">'+brkFor(n)+'</div></div><div class="t">'+f1(netFor(n))+'</div></div>';
   }).join("");
   renderAllow();
   const w=[];

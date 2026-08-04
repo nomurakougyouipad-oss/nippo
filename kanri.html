@@ -106,11 +106,24 @@
   .onehd span{font-size:14px;color:var(--muted);}
   .back{border:1px solid var(--line-s);background:var(--card);border-radius:2px;
     padding:10px 14px;font-size:14px;color:var(--muted);cursor:pointer;font-family:inherit;}
-  .figs{display:flex;gap:32px;flex-wrap:wrap;margin-bottom:6px;}
+  .figs{display:flex;gap:32px;flex-wrap:wrap;align-items:baseline;margin-bottom:6px;}
   .figs .f .l{font-size:12.5px;color:var(--muted);}
-  .figs .f .v{font-size:30px;font-weight:700;line-height:1.1;margin-top:4px;}
+  .figs .f .v{font-size:26px;font-weight:700;line-height:1.1;margin-top:4px;}
+  .figs .f .v.big{font-size:42px;}
   .figs .f .v.z{color:#9b9797;}
   .figs .f .v.g{color:var(--green);}
+  /* 種類ごとの一覧（確認アプリと同じ見せ方） */
+  .kr{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+    max-width:420px;padding:9px 0;border-bottom:1px solid var(--line);}
+  .kr .n{font-size:15px;}
+  .kr .t{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;}
+  .kr.mn .n,.kr.mn .t{color:var(--mag-d);}
+  /* 1日ぶんの内訳。小さい灰色をやめて、合計と同じくらいの大きさで横並びに */
+  .brk{font-size:14.5px;line-height:1.75;color:var(--ink);}
+  .brk .mn{color:var(--mag-d);font-weight:600;}
+  .brk .sep{color:var(--faint);margin:0 4px;}
+  .brk .z{color:var(--faint);}
+  td.num.big{font-size:18px;font-weight:700;}
   .kb-row{display:grid;grid-template-columns:110px 1fr 60px;gap:12px;align-items:center;margin-bottom:7px;}
   .kb-row .n{font-size:13.5px;}
   .kb-row .t{text-align:right;font-size:14px;font-variant-numeric:tabular-nums;}
@@ -374,6 +387,9 @@ const PAPER_HEAD  = ["平日\n工場","平日\n現場","休日\n工場","休日\
 const WORK_KINDS  = ["平日工場","平日現場","休日工場","休日現場"];
 const KUBUN = ["現場","松前工場","伊予工場","東方工場","東レ常駐","設計","緑化","JFE","神戸製鋼"];
 const OFF_REASONS = ["休み","有給","欠勤","振休","特休"];
+const OT2_KINDS   = ["工場残業","現場残業"];   /* 「残業」として大きく出す分 */
+/* 月合計の一覧に並べる項目（残業は上に大きく出すので、ここには入れない） */
+const LIST_KINDS  = PAPER_KINDS.filter(k=>OT2_KINDS.indexOf(k)<0);
 const ALLOW_BORDER = 4;          /* 実働がこの時間以下なら 0.5 */
 
 let ALLDATA = {}, WORKERS = [], JOBS = [];
@@ -397,6 +413,14 @@ function dStr(d){
   return isNaN(t) ? esc(d) : (t.getMonth()+1)+"/"+t.getDate()+"（"+WD[t.getDay()]+"）";
 }
 function jobLabel(r){ return r.no ? r.no : "―"; }
+/* 1日ぶんの内訳を、同じくらいの大きさで横に並べる */
+function brkHtml(r){
+  const h = r.h||{};
+  const p = PAPER_KINDS.filter(k=>h[k]).map(k=>'<span>'+esc(k)+' '+f1(h[k])+'</span>');
+  if(r.late)  p.push('<span class="mn">遅刻 −'+f1(r.late)+'</span>');
+  if(r.early) p.push('<span class="mn">早退 −'+f1(r.early)+'</span>');
+  return p.length ? p.join('<span class="sep">／</span>') : '<span class="z">―</span>';
+}
 function ymOf(d){ return String(d||"").slice(0,7); }
 function kubunGroup(w){
   /* 旧データの「協力」は「常駐協力」として扱う */
@@ -601,21 +625,18 @@ function renderDetail(){
     '<thead><tr><th>日付</th><th>氏名</th><th>区分</th><th>注番</th><th>工事名</th>'+
     '<th>持ち場</th><th>職長</th><th>内訳</th><th class="num">合計</th><th></th></tr></thead><tbody>' +
     list.map(r=>{
-      const h = r.h||{};
-      const detail = ALL_KINDS.filter(k=>h[k]).map(k=>k+" "+f1(h[k])).join("　") || "―";
       const tags = [];
       if(r.s) tags.push('<span class="tg">出張</span>');
       if(r.y) tags.push('<span class="tg">夜勤</span>');
-      if(r.late) tags.push('<span class="tg ot">遅刻'+f1(r.late)+'</span>');
-      if(r.early) tags.push('<span class="tg ot">早退'+f1(r.early)+'</span>');
       return '<tr><td>'+dStr(r.d)+'</td><td>'+esc(r.n)+'</td>'+
         '<td>'+esc(r.k||"")+(r.shozoku&&r.k!=="自社"?'<div class="used">'+esc(r.shozoku)+'</div>':"")+'</td>'+
         '<td><span class="no'+(r.no?"":" free")+'">'+esc(jobLabel(r))+'</span></td>'+
         '<td>'+esc(r.j||"")+'</td>'+
         '<td>'+(r.kubun?'<span class="kb">'+esc(r.kubun)+'</span>':"")+'</td>'+
         '<td>'+esc(r.f||"")+'</td>'+
-        '<td>'+esc(detail)+(tags.length?'<div style="margin-top:4px">'+tags.join("")+'</div>':"")+'</td>'+
-        '<td class="num">'+f1(netOf(r))+'</td>'+
+        '<td><div class="brk">'+brkHtml(r)+'</div>'+
+          (tags.length?'<div style="margin-top:4px">'+tags.join("")+'</div>':"")+'</td>'+
+        '<td class="num big">'+f1(netOf(r))+'</td>'+
         '<td style="white-space:nowrap">'+actBtns(r,"ed2")+'</td></tr>';
     }).join("") + '</tbody>'
   ) : '<tbody><tr><td class="empty">'+(fKubun?"この区分の記録はありません":"この月の記録はありません")+'</td></tr></tbody>';
@@ -805,45 +826,43 @@ function renderOne(){
   document.getElementById("oneName").textContent = p.n;
   document.getElementById("oneMonth").textContent = (curMonth||"").replace("-","年")+"月";
 
+  /* 大きく出すのは「出勤日数」と「残業」だけ。総合計（全部を足した時間）は出さない。
+     人工と職長手当は給与計算に要るので、小さめに並べて残す。 */
   const g = arr => arr.reduce((a,k)=>a+(p.kinds[k]||0),0);
   const figs = [
-    {l:"合計時間", v:f1(p.total)},
-    {l:"出勤日数", v:p.days+"日"},
+    {l:"出勤日数", v:p.days+"日", big:true},
+    {l:"残業", v:f1(g(OT2_KINDS)), big:true},
     {l:"人工（÷8）", v:ninku(p.kinds).toFixed(2)},
-    {l:"残業計", v:f1(g(["工場残業","現場残業"]))},
-    {l:"移動計", v:f1(g(["移動行き","移動帰り"]))},
-    {l:"早出・深夜・突発", v:f1(g(["早出","深夜","突発"]))},
     {l:"職長手当（工数）", v:(p.allow?allowTx(p.allow):"―"), g:true},
   ];
   document.getElementById("oneFigs").innerHTML = figs.map(f=>{
-    const zero = (f.v==="0.0"||f.v==="0.00"||f.v==="―");
+    const zero = (f.v==="0.0"||f.v==="0.00"||f.v==="―"||f.v==="0日");
     return '<div class="f"><div class="l">'+esc(f.l)+'</div>'+
-      '<div class="v'+(zero?" z":"")+(f.g&&!zero?" g":"")+'">'+esc(f.v)+'</div></div>';
+      '<div class="v'+(f.big?" big":"")+(zero?" z":"")+(f.g&&!zero?" g":"")+'">'+esc(f.v)+'</div></div>';
   }).join("");
 
-  const used = PAPER_KINDS.filter(k=>p.kinds[k]);
-  const max = used.length ? Math.max.apply(null, used.map(k=>p.kinds[k])) : 1;
-  document.getElementById("oneKinds").innerHTML = used.length ? used
-    .sort((a,b)=>p.kinds[b]-p.kinds[a])
-    .map(k=>'<div class="kb-row"><div class="n">'+esc(k)+'</div>'+
-      '<div class="kb-bar"><i style="width:'+Math.round(p.kinds[k]/max*100)+'%"></i></div>'+
-      '<div class="t">'+f1(p.kinds[k])+'</div></div>').join("")
-    : '<div class="note">時間の記録がありません</div>';
+  /* 種類ごとの一覧。残業は上に大きく出しているので、ここには入れない */
+  const lateT  = p.rows.reduce((a,r)=>a+(r.late||0),0);
+  const earlyT = p.rows.reduce((a,r)=>a+(r.early||0),0);
+  const krows = LIST_KINDS.filter(k=>p.kinds[k]).map(k=>
+    '<div class="kr"><span class="n">'+esc(k)+'</span><span class="t">'+f1(p.kinds[k])+'</span></div>');
+  if(lateT)  krows.push('<div class="kr mn"><span class="n">遅刻</span><span class="t">−'+f1(lateT)+'</span></div>');
+  if(earlyT) krows.push('<div class="kr mn"><span class="n">早退</span><span class="t">−'+f1(earlyT)+'</span></div>');
+  document.getElementById("oneKinds").innerHTML = krows.join("")
+    || '<div class="note">時間の記録がありません</div>';
 
   const rows = p.rows.slice().sort((a,b)=>String(a.d).localeCompare(String(b.d)));
   document.getElementById("oneRows").innerHTML = rows.length ? (
     '<thead><tr><th>日付</th><th>注番</th><th>工事件名</th><th>区分</th><th>職長</th>'+
     '<th>時間の内訳</th><th class="num">合計</th><th></th></tr></thead><tbody>'+
     rows.map(r=>{
-      const h = r.h||{};
-      const detail = PAPER_KINDS.filter(k=>h[k]).map(k=>k+" "+f1(h[k])).join("　") || "―";
       return '<tr><td>'+dStr(r.d)+'</td>'+
         '<td><span class="no'+(r.no?"":" free")+'">'+esc(r.no||"―")+'</span></td>'+
         '<td>'+esc(r.j||"")+'</td>'+
         '<td>'+(r.kubun?'<span class="kb">'+esc(r.kubun)+'</span>':"")+'</td>'+
         '<td>'+esc(r.f||"")+'</td>'+
-        '<td style="font-size:13px;color:var(--muted)">'+esc(detail)+'</td>'+
-        '<td class="num">'+f1(netOf(r))+'</td>'+
+        '<td><div class="brk">'+brkHtml(r)+'</div></td>'+
+        '<td class="num big">'+f1(netOf(r))+'</td>'+
         '<td style="white-space:nowrap">'+actBtns(r,"ed3")+'</td></tr>';
     }).join("")+'</tbody>'
   ) : '<tbody><tr><td class="empty">この月の記録はありません</td></tr></tbody>';
