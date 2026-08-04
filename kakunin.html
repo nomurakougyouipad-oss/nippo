@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -132,8 +130,11 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 const PAPER_KINDS = ["平日工場","平日現場","休日工場","休日現場","工場残業","現場残業","移動行き","移動帰り","早出","深夜","突発"];
+const WORK_KINDS = ["平日工場","平日現場","休日工場","休日現場"];
 const WD = ["日","月","火","水","木","金","土"];
 const YAKUIN = ["野村","松高","高市","水元","井谷","本山","大西"];
+const MGROUPS = ["自社","常駐協力","外注協力"];
+const ALLOW_BORDER = 4;   /* 実働がこの時間以下なら 0.5 */
 
 let ALLDATA = {};
 let V = { name:null, month:null, tab:"me" };
@@ -149,6 +150,36 @@ function allRows(){ return Object.keys(ALLDATA).reduce((a,m)=>a.concat(monthRows
 function jobKey(r){ return r.no || r.j || ""; }
 function dShort(ds){ const d=new Date(ds+"T00:00:00");
   return isNaN(d)?ds:((d.getMonth()+1)+"/"+d.getDate()+"（"+WD[d.getDay()]+"）"); }
+
+/* 旧データの「協力」は「常駐協力」として扱う */
+function mGroupOfK(k){
+  if(!k || k==="自社") return "自社";
+  if(k==="外注協力") return "外注協力";
+  return "常駐協力";
+}
+/* ---- 職長手当（工数） ---- */
+/* 実働＝平日/休日の工場・現場の合計から遅刻・早退を引いたもの */
+function workNetOf(r){
+  const h=r.h||{};
+  const w=WORK_KINDS.reduce((a,k)=>a+(h[k]||0),0);
+  return Math.max(0, w-(r.late||0)-(r.early||0));
+}
+/* 本人も1に数える。役員7名と休みの人は数えない。実働4時間以下は0.5 */
+function allowUnit(r){
+  if(!r || r.off) return 0;
+  if(YAKUIN.indexOf(r.n)>=0) return 0;
+  return workNetOf(r)<=ALLOW_BORDER ? 0.5 : 1;
+}
+function autoAllow(rs){ return (rs||[]).reduce((a,r)=>a+allowUnit(r),0); }
+/* 職長がスマホで直した値・事務所が直した値があれば、それを使う */
+function batchAllow(rs){
+  for(let i=0;i<rs.length;i++){
+    const v=rs[i].fa;
+    if(v!==undefined && v!==null && v!=="") return Number(v)||0;
+  }
+  return autoAllow(rs);
+}
+function allowTx(v){ return (Math.round((v||0)*10)/10).toFixed(1); }
 
 db.ref("nippo").on("value", snap=>{
   ALLDATA = snap.val() || {};
@@ -173,13 +204,13 @@ function renderNames(){
     document.getElementById("updTop").textContent="";
     return;
   }
-  const own=names.filter(n=>map[n]==="自社"&&n.indexOf(q)>=0).sort(byLen);
-  const par=names.filter(n=>map[n]!=="自社"&&n.indexOf(q)>=0).sort(byLen);
   let html="";
-  if(own.length) html+='<div class="step">自社</div><div class="ngrid" style="margin-bottom:18px">'+
-    own.map(n=>'<button class="nchip" data-n="'+esc(n)+'">'+esc(n)+'</button>').join("")+'</div>';
-  if(par.length) html+='<div class="step">協力会社</div><div class="ngrid">'+
-    par.map(n=>'<button class="nchip" data-n="'+esc(n)+'">'+esc(n)+'</button>').join("")+'</div>';
+  MGROUPS.forEach(g=>{
+    const l=names.filter(n=>mGroupOfK(map[n])===g && n.indexOf(q)>=0).sort(byLen);
+    if(!l.length) return;
+    html+='<div class="step">'+esc(g)+'</div><div class="ngrid" style="margin-bottom:18px">'+
+      l.map(n=>'<button class="nchip" data-n="'+esc(n)+'">'+esc(n)+'</button>').join("")+'</div>';
+  });
   document.getElementById("vNameList").innerHTML = html || '<div class="empty">該当する名前がありません</div>';
   document.querySelectorAll("#vNameList .nchip").forEach(b=>{ b.onclick=()=>openView(b.dataset.n); });
 
@@ -209,8 +240,9 @@ function renderView(){
 
   const tabs=[{k:"me",l:"自分"}].concat(hasSent?[{k:"sent",l:"出した日報"}]:[]);
   if(!hasSent&&V.tab!=="me") V.tab="me";
-  document.getElementById("vTabs").innerHTML=tabs.map(t=>
-    '<button class="'+(V.tab===t.k?"on":"")+'" data-k="'+t.k+'">'+t.l+'</button>').join("");
+  document.getElementById("vTabs").style.display = tabs.length>1 ? "flex" : "none";
+  document.getElementById("vTabs").innerHTML = tabs.length>1 ? tabs.map(t=>
+    '<button class="'+(V.tab===t.k?"on":"")+'" data-k="'+t.k+'">'+t.l+'</button>').join("") : "";
   document.querySelectorAll("#vTabs button").forEach(b=>{
     b.onclick=()=>{ V.tab=b.dataset.k; renderView(); };
   });
@@ -232,29 +264,32 @@ function renderView(){
   }).join(""):'<div class="empty">この月の記録はありません</div>';
 
   const bt={};
-  sent.filter(r=>!r.off).forEach(r=>{ const k=r.batch||(r.d+"|"+jobKey(r)); (bt[k]=bt[k]||[]).push(r); });
+  sent.forEach(r=>{ const k=r.batch||(r.d+"|"+jobKey(r)); (bt[k]=bt[k]||[]).push(r); });
   const keys=Object.keys(bt).sort((a,b)=>String(bt[b][0].d).localeCompare(String(bt[a][0].d)));
   let payN=0;
   const payRows=keys.map(k=>{
     const g=bt[k], r=g[0];
-    const net=g.filter(x=>x.n!==V.name&&YAKUIN.indexOf(x.n)<0);
-    payN+=net.length;
+    const v=batchAllow(g);
+    const edited=g.some(x=>x.faE);
+    payN+=v;
     return '<div class="payrow"><span>'+dShort(r.d)+'　'+esc(r.j||"")+
-      (r.f&&r.f!==V.name?" ─ 職長 "+esc(r.f):"")+'</span>'+
-      '<span class="'+(net.length?"":"x")+'">'+(net.length?net.length:"対象外")+'</span></div>';
+      (r.f&&r.f!==V.name?" ─ 職長 "+esc(r.f):"")+(edited?"　<span class=\"x\">手で直した分</span>":"")+'</span>'+
+      '<span class="'+(v?"":"x")+'">'+(v?allowTx(v):"対象外")+'</span></div>';
   }).join("");
   document.getElementById("vPay").innerHTML=hasSent?
     '<div class="step">職長手当（'+(V.month||"").replace("-","年")+'月）</div>'+
-    '<div class="n">'+payN+'<span>人分 ／ 日報から自動で計算</span></div>'+
-    '<div style="margin-top:12px">'+payRows+'</div>':"";
+    '<div class="n">'+allowTx(payN)+'<span>工数 ／ 日報から自動で計算</span></div>'+
+    '<div style="margin-top:12px">'+payRows+'</div>'+
+    '<div class="note">自分を含めて数え、役員7名と休みの人は数えません。1人あたり、実働（平日・休日の工場現場から遅刻・早退を引いた分）が4時間以下なら0.5、それより上なら1.0です。</div>':"";
 
   document.getElementById("vSentList").innerHTML=keys.length?keys.map(k=>{
     const g=bt[k], r=g[0];
-    const offs=rows.filter(x=>x.off&&x.batch===r.batch);
-    const t=g.reduce((a,x)=>a+netOf(x),0);
+    const work=g.filter(x=>!x.off), offs=g.filter(x=>x.off);
+    const t=work.reduce((a,x)=>a+netOf(x),0);
     return '<div class="vsent"><div class="at">'+dShort(r.d)+(r.at?"　"+esc(String(r.at).split(" ")[1]||"")+" 送信":"")+'</div>'+
       '<div class="j">'+(r.no?'<span class="no">'+esc(r.no)+'</span>':'')+esc(r.j||"")+'</div>'+
-      '<div class="s">'+g.length+'人 ／ 合計 '+f1(t)+'時間'+(offs.length?' ／ 休み '+offs.length+'人':'')+'</div></div>';
+      '<div class="s">'+work.length+'人 ／ 合計 '+f1(t)+'時間'+(offs.length?' ／ 休み '+offs.length+'人':'')+
+      ' ／ 職長手当 '+allowTx(batchAllow(g))+'</div></div>';
   }).join(""):'<div class="empty">この月に出した日報はありません</div>';
 }
 </script>
