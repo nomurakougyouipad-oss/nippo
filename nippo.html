@@ -75,6 +75,9 @@
     border:1px solid var(--line-s);border-radius:2px;font-size:17px;white-space:nowrap;cursor:pointer;}
   .chip.on{background:var(--green);color:#f3f2f2;border-color:var(--green);font-weight:600;}
   .chip.sm{min-height:44px;padding:10px 14px;font-size:15px;}
+  /* 引く時間（遅刻・早退）は色を変えて、足す時間と間違えないようにする */
+  .chip.mn{border-color:rgba(214,0,108,.45);color:var(--mag-d);}
+  .chip.mn.on{background:var(--mag);border-color:var(--mag);color:#f3f2f2;}
   .kgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
   .kgrid .chip{justify-content:center;text-align:center;padding:16px 4px;font-size:17px;}
 
@@ -292,6 +295,7 @@
     </div>
     <div class="sec">
       <div class="step">個別 <em id="fIndN"></em> <span style="float:right;color:var(--faint)">違う人だけタップ</span></div>
+      <div class="note" style="margin-top:0;margin-bottom:10px">時間が違う人、遅刻・早退した人だけタップして直します。遅刻・早退はここから、その人だけに入れます。</div>
       <div id="fPersonRows"></div>
     </div>
     <div class="sec">
@@ -487,7 +491,8 @@ const PAPER_KINDS = ["平日工場","平日現場","休日工場","休日現場"
 const OT_KINDS   = ["工場残業","現場残業","早出","深夜"];
 const OFF_REASONS = ["休み","有給","欠勤","振休","特休"];
 const KUBUN = ["現場","松前工場","伊予工場","東方工場","東レ常駐","設計","緑化","JFE","神戸製鋼"];
-const CHECKS = ["出張","夜勤","遅刻","早退"];
+const CHECKS = ["出張","夜勤"];          /* 全員一律。遅刻・早退は人ごとに入れる */
+const MINUS_KINDS = ["遅刻","早退"];      /* 引く時間。人ごとのテンキーで入れる */
 const WD = ["日","月","火","水","木","金","土"];
 const YAKUIN = ["野村","松高","高市","水元","井谷","本山","大西"];
 const WORK_KINDS = ["平日工場","平日現場","休日工場","休日現場"];
@@ -504,7 +509,7 @@ let ready=false;
 let S = {
   date: todayStr(), foreman:null, job:null, jobFree:null, kubun:"現場",
   sel:[], off:[], guests:[], all:{}, ovr:{}, more:false, foremanAuto:false,
-  checks:{出張:false,夜勤:false,遅刻:false,早退:false}, lateH:0, earlyH:0,
+  checks:{出張:false,夜勤:false}, late:{}, early:{},
   jobTab:"fixed", pad:"0", padTarget:null, calY:0, calM:0, closeTarget:null,
   mgOpen:{"自社":true,"常駐協力":false,"外注協力":false},
   allow:0, allowE:false
@@ -521,6 +526,14 @@ function f1(v){ return (Math.round((v||0)*10)/10).toFixed(1); }
 function r1(v){ return Math.round((v||0)*10)/10; }
 function totalOf(h){ h=h||{}; return ALL_KINDS.reduce((a,k)=>a+(h[k]||0),0); }
 function hoursFor(n){ return S.ovr[n] || S.all; }
+/* 遅刻・早退は人ごと */
+function lateFor(n){ return S.late[n]||0; }
+function earlyFor(n){ return S.early[n]||0; }
+function minusFor(n){ return lateFor(n)+earlyFor(n); }
+/* その人の差引後の時間 */
+function netFor(n){ return Math.max(0, totalOf(hoursFor(n)) - minusFor(n)); }
+/* その人に何か個別の入力があるか（時間の上書き・遅刻・早退） */
+function hasOwn(n){ return !!S.ovr[n] || !!S.late[n] || !!S.early[n]; }
 function netOf(r){ return Math.max(0, totalOf(r.h)-(r.late||0)-(r.early||0)); }
 function dLabel(ds){ const d=new Date(ds+"T00:00:00");
   return isNaN(d)?ds:(d.getFullYear()+"年"+(d.getMonth()+1)+"月"+d.getDate()+"日（"+WD[d.getDay()]+"）"); }
@@ -584,8 +597,7 @@ function partnerGroups(){ const g={};
 /* 実働＝平日/休日の工場・現場の合計から遅刻・早退を引いたもの */
 function workNetFor(n){
   const h=hoursFor(n);
-  const w=WORK_KINDS.reduce((a,k)=>a+(h[k]||0),0)
-        -(S.checks["遅刻"]?S.lateH:0)-(S.checks["早退"]?S.earlyH:0);
+  const w=WORK_KINDS.reduce((a,k)=>a+(h[k]||0),0)-minusFor(n);
   return Math.max(0,w);
 }
 /* 本人も数える。役員7名は数えない。休みの人（S.off）は入らない。
@@ -1033,11 +1045,14 @@ function renderPersons(){
     return;
   }
   document.getElementById("fPersonRows").innerHTML=S.sel.map(n=>{
-    const h=hoursFor(n), ed=!!S.ovr[n];
-    const detail=ALL_KINDS.filter(k=>h[k]).map(k=>k+" "+f1(h[k])).join(" ・ ")||"未入力";
+    const h=hoursFor(n), ed=hasOwn(n);
+    const parts=ALL_KINDS.filter(k=>h[k]).map(k=>k+" "+f1(h[k]));
+    if(S.late[n])  parts.push("遅刻 −"+f1(S.late[n]));
+    if(S.early[n]) parts.push("早退 −"+f1(S.early[n]));
+    const detail=parts.join(" ・ ")||"未入力";
     return '<button class="prow'+(ed?" ed":"")+'" data-n="'+esc(n)+'">'+
       '<div class="t1"><span class="nm">'+esc(n)+(ed?'<em>個別</em>':'')+'</span>'+
-      '<span class="tt">'+f1(totalOf(h))+'</span></div>'+
+      '<span class="tt">'+f1(netFor(n))+'</span></div>'+
       '<div class="dt">'+esc(detail)+'（タップして直す）</div></button>';
   }).join("");
   document.querySelectorAll("#fPersonRows .prow").forEach(b=>{
@@ -1046,23 +1061,17 @@ function renderPersons(){
 }
 
 function renderChecks(){
-  document.getElementById("fChecks").innerHTML=CHECKS.map(k=>{
-    let v;
-    if((k==="遅刻"&&S.checks[k])) v='<span class="v">− '+f1(S.lateH)+'</span>';
-    else if((k==="早退"&&S.checks[k])) v='<span class="v">− '+f1(S.earlyH)+'</span>';
-    else v='<span class="v'+(S.checks[k]?"":" z")+'">'+(S.checks[k]?"入":"−")+'</span>';
-    return '<button class="row'+(S.checks[k]?" on":"")+'" data-k="'+esc(k)+'"><span>'+esc(k)+
-      (k==="遅刻"&&S.checks[k]?"した分":"")+'</span>'+v+'</button>';
-  }).join("");
+  document.getElementById("fChecks").innerHTML=CHECKS.map(k=>
+    '<button class="row'+(S.checks[k]?" on":"")+'" data-k="'+esc(k)+'"><span>'+esc(k)+'</span>'+
+    '<span class="v'+(S.checks[k]?"":" z")+'">'+(S.checks[k]?"〇":"−")+'</span></button>').join("");
   document.querySelectorAll("#fChecks .row").forEach(b=>{
-    b.onclick=()=>{ const k=b.dataset.k;
-      if((k==="遅刻"||k==="早退")&&S.checks[k]){ openPad(k,k); return; }
-      S.checks[k]=!S.checks[k];
-      if((k==="遅刻"||k==="早退")&&S.checks[k]) openPad(k,k);
-      else renderAll(); };
+    b.onclick=()=>{ S.checks[b.dataset.k]=!S.checks[b.dataset.k]; renderAll(); };
   });
-  document.getElementById("fChecksNote").textContent=(S.checks["遅刻"]||S.checks["早退"])
-    ? "遅刻・早退は、この送信のメンバー全員から引かれます。1人だけのときは、その人を別に送ってください。" : "";
+  const m=S.sel.filter(n=>minusFor(n)>0);
+  document.getElementById("fChecksNote").innerHTML=
+    "出張・夜勤は、この送信のメンバー全員に付きます。"+
+    "<br>遅刻・早退は上の「個別」から、その人だけに入れてください。"+
+    (m.length?"<br>今つけている人："+m.map(n=>esc(n)+" −"+f1(minusFor(n))).join("・"):"");
 }
 
 function renderStepBtns(){
@@ -1076,26 +1085,30 @@ function canSend(){ return canStep2() && totalOf(S.all)>0; }
 /* ---- テンキー ---- */
 function openPad(who,kind){
   S.padTarget={who,kind};
+  const isPerson=(who!=="all"&&who!=="allow");
+  const isMinus=(kind==="遅刻"||kind==="早退");
   let cur;
-  if(who==="all") cur=S.all[kind]||0;
-  else if(who==="遅刻") cur=S.lateH;
-  else if(who==="早退") cur=S.earlyH;
-  else if(who==="allow") cur=allowNow();
+  if(who==="allow") cur=allowNow();
+  else if(who==="all") cur=S.all[kind]||0;
+  else if(kind==="遅刻") cur=lateFor(who);
+  else if(kind==="早退") cur=earlyFor(who);
   else cur=hoursFor(who)[kind]||0;
   S.pad=cur?cur.toFixed(1):"0";
-  const isT=(who!=="遅刻"&&who!=="早退"&&who!=="allow");
+  const isT=(who!=="allow");
   document.getElementById("padTitle").textContent=
     who==="allow" ? "職長手当（工数）"
-    : (who==="all"?"全員分":who)+(isT?" ─ "+kind:" の時間");
+    : (who==="all"?"全員分":who)+" ─ "+kind+(isMinus?"（引く時間）":"");
   document.getElementById("padKinds").style.display=isT?"flex":"none";
   if(isT){
-    const kinds=MORE_KINDS.indexOf(kind)>=0?MORE_KINDS:MAIN_KINDS;
+    /* 個別のときだけ「遅刻」「早退」も並べる */
+    const kinds=MORE_KINDS.indexOf(kind)>=0 ? MORE_KINDS
+              : (isPerson ? MAIN_KINDS.concat(MINUS_KINDS) : MAIN_KINDS);
     document.getElementById("padKinds").innerHTML=kinds.map(k=>
-      '<button class="chip sm'+(k===kind?" on":"")+'" data-k="'+esc(k)+'">'+esc(k)+'</button>').join("");
+      '<button class="chip sm'+(k===kind?" on":"")+(MINUS_KINDS.indexOf(k)>=0?" mn":"")+
+      '" data-k="'+esc(k)+'">'+esc(k)+'</button>').join("");
     document.querySelectorAll("#padKinds .chip").forEach(b=>b.onclick=()=>openPad(who,b.dataset.k));
   }
-  document.getElementById("padReset").style.display=
-    (who!=="all"&&who!=="allow"&&who!=="遅刻"&&who!=="早退"&&S.ovr[who])?"block":"none";
+  document.getElementById("padReset").style.display=(isPerson&&hasOwn(who))?"block":"none";
   renderPad(); openSheet("pad");
 }
 function renderPad(){
@@ -1120,34 +1133,46 @@ function applyPad(){
   }
   const v=Math.max(0,Math.min(24,parseFloat(S.pad)||0));
   if(t.who==="all") S.all[t.kind]=v;
-  else if(t.who==="遅刻") S.lateH=v;
-  else if(t.who==="早退") S.earlyH=v;
+  else if(t.kind==="遅刻"){ if(v) S.late[t.who]=v; else delete S.late[t.who]; }
+  else if(t.kind==="早退"){ if(v) S.early[t.who]=v; else delete S.early[t.who]; }
   else { const base=S.ovr[t.who]||Object.assign({},S.all); base[t.kind]=v; S.ovr[t.who]=base; }
   closeSheet(); renderAll();
 }
-function resetPerson(){ const t=S.padTarget; if(!t) return; delete S.ovr[t.who]; closeSheet(); renderAll(); }
+/* その人の個別（時間の上書き・遅刻・早退）をぜんぶ消して、全員分と同じにする */
+function resetPerson(){
+  const t=S.padTarget; if(!t) return;
+  delete S.ovr[t.who]; delete S.late[t.who]; delete S.early[t.who];
+  closeSheet(); renderAll();
+}
 
 /* ================== 確認 ================== */
 function goConfirm(){
   if(!canSend()) return;
   const jobName=S.job?(JOBS.find(j=>j.no===S.job)||{}).name:S.jobFree;
   document.getElementById("cfmDate").textContent=dLabel(S.date);
-  const chk=CHECKS.filter(k=>S.checks[k]).map(k=>
-    k==="遅刻"?"遅刻 −"+f1(S.lateH):k==="早退"?"早退 −"+f1(S.earlyH):k).join("・")||"なし";
+  const chk=CHECKS.filter(k=>S.checks[k]).join("・")||"なし";
+  const mn=S.sel.filter(n=>minusFor(n)>0);
   document.getElementById("cfmBox").innerHTML=
     "<dt>工事</dt><dd>"+(S.job?'<span class="no">'+esc(S.job)+'</span><br>':'')+esc(jobName)+"</dd>"+
     "<dt>区分</dt><dd>"+esc(S.kubun)+"</dd>"+
     "<dt>職長</dt><dd>"+esc(S.foreman||"なし（空欄）")+"</dd>"+
     "<dt>休み</dt><dd>"+(S.off.length?esc(S.off.map(o=>o.name+"（"+o.reason+"）").join("・")):"なし")+"</dd>"+
-    "<dt>チェック</dt><dd>"+esc(chk)+"</dd>";
-  const grand=S.sel.reduce((a,n)=>a+netTotal(hoursFor(n)),0);
+    "<dt>チェック</dt><dd>"+esc(chk)+"</dd>"+
+    "<dt>遅刻・早退</dt><dd>"+(mn.length
+      ? esc(mn.map(n=>n+"（"+[S.late[n]?"遅刻 −"+f1(S.late[n]):"",S.early[n]?"早退 −"+f1(S.early[n]):""]
+          .filter(Boolean).join("・")+"）").join("　"))
+      : "なし")+"</dd>";
+  const grand=S.sel.reduce((a,n)=>a+netFor(n),0);
   document.getElementById("cfmPeople").textContent=S.sel.length+"人の時間";
   document.getElementById("cfmTotal").textContent="合計 "+f1(grand);
   document.getElementById("cfmRows").innerHTML=S.sel.map(n=>{
-    const h=hoursFor(n), ed=!!S.ovr[n];
-    const d=ALL_KINDS.filter(k=>h[k]).map(k=>k+" "+f1(h[k])).join(" ・ ")||"未入力";
+    const h=hoursFor(n), ed=hasOwn(n);
+    const parts=ALL_KINDS.filter(k=>h[k]).map(k=>k+" "+f1(h[k]));
+    if(S.late[n])  parts.push("遅刻 −"+f1(S.late[n]));
+    if(S.early[n]) parts.push("早退 −"+f1(S.early[n]));
+    const d=parts.join(" ・ ")||"未入力";
     return '<div class="srow"><div><div class="n">'+esc(n)+(ed?'<em>個別</em>':'')+'</div>'+
-      '<div class="d">'+esc(d)+'</div></div><div class="t">'+f1(netTotal(h))+'</div></div>';
+      '<div class="d">'+esc(d)+'</div></div><div class="t">'+f1(netFor(n))+'</div></div>';
   }).join("");
   renderAllow();
   const w=[];
@@ -1155,7 +1180,6 @@ function goConfirm(){
   document.getElementById("cfmWarn").innerHTML=w.length?'<div class="warnbox">'+w.map(esc).join("<br>")+'</div>':"";
   showScreen("scConfirm");
 }
-function netTotal(h){ return Math.max(0,totalOf(h)-(S.checks["遅刻"]?S.lateH:0)-(S.checks["早退"]?S.earlyH:0)); }
 
 /* ---- 職長手当 ---- */
 function renderAllow(){
@@ -1203,7 +1227,7 @@ function doSend(){
       no:S.job||"",j:jobName||"",kubun:S.kubun,f:S.foreman||"",
       h:Object.assign({},hoursFor(n)),off:0,offReason:"",
       s:S.checks["出張"]?1:0,y:S.checks["夜勤"]?1:0,
-      late:S.checks["遅刻"]?S.lateH:0,early:S.checks["早退"]?S.earlyH:0,
+      late:lateFor(n),early:earlyFor(n),
       fa:fa,faE:faE,batch:batch,at:stamp});
   });
   S.off.forEach(o=>{
@@ -1221,7 +1245,7 @@ function doSend(){
     document.getElementById("doneSub").textContent=dShort(S.date)+"・"+S.kubun;
     document.getElementById("doneJob").innerHTML=
       (S.job?'<span style="font-family:ui-monospace,monospace;font-weight:600;color:var(--green)">'+esc(S.job)+'</span> ':'')+esc(jobName||"");
-    const g=S.sel.reduce((a,n)=>a+netTotal(hoursFor(n)),0);
+    const g=S.sel.reduce((a,n)=>a+netFor(n),0);
     document.getElementById("doneCnt").textContent=
       S.sel.length+"人 ／ 合計 "+f1(g)+"時間"+(S.off.length?" ／ 休み "+S.off.length+"人":"")+
       (S.foreman?" ／ 職長手当 "+allowTx(fa):"");
@@ -1234,13 +1258,13 @@ function doSend(){
 }
 function continueNext(){
   S.job=null; S.jobFree=null; S.all={}; S.ovr={}; S.more=false;
-  S.checks={出張:false,夜勤:false,遅刻:false,早退:false}; S.lateH=0; S.earlyH=0;
+  S.checks={出張:false,夜勤:false}; S.late={}; S.early={};
   S.allow=0; S.allowE=false;
   showScreen("scStep1"); renderAll();
 }
 function finishSend(){
   S.job=null; S.jobFree=null; S.all={}; S.ovr={}; S.sel=[]; S.off=[]; S.guests=[]; S.more=false;
-  S.checks={出張:false,夜勤:false,遅刻:false,早退:false}; S.lateH=0; S.earlyH=0;
+  S.checks={出張:false,夜勤:false}; S.late={}; S.early={};
   S.allow=0; S.allowE=false;
   applyTeam(); goTop();
 }
