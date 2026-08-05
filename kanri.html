@@ -266,6 +266,10 @@
       <div class="wrapT"><table id="dTable"></table></div>
       <div class="sec-lbl">休みの記録</div>
       <div class="wrapT"><table id="dOff"></table></div>
+      <div class="note">「送った人」は、その日報をスマホから送った人です。職長とはかぎりません
+        （職長でない人が送った日報や、職長の欄を空にして送った日報があります）。
+        分からないことがあれば、この人に聞いてください。
+        この機能より前に送られた日報には記録がないので、空欄のままです。</div>
     </div>
 
     <div class="pane" id="pPerson">
@@ -630,12 +634,12 @@ function renderDetail(){
     card(f1(total),"時間") + card(offs.length,"休みの記録");
 
   const q = (document.getElementById("dSearch").value||"").trim();
-  const list = work.filter(r=>!q || (r.n+" "+(r.no||"")+" "+(r.j||"")+" "+(r.f||"")+" "+(r.shozoku||"")).indexOf(q)>=0)
+  const list = work.filter(r=>!q || (r.n+" "+(r.no||"")+" "+(r.j||"")+" "+(r.f||"")+" "+(r.by||"")+" "+(r.shozoku||"")).indexOf(q)>=0)
     .sort((a,b)=>String(b.d).localeCompare(String(a.d)) || String(a.n).localeCompare(String(b.n),"ja"));
 
   document.getElementById("dTable").innerHTML = list.length ? (
     '<thead><tr><th>日付</th><th>氏名</th><th>区分</th><th>注番</th><th>工事名</th>'+
-    '<th>持ち場</th><th>職長</th><th>内訳</th><th class="num">合計</th><th></th></tr></thead><tbody>' +
+    '<th>持ち場</th><th>職長</th><th>送った人</th><th>内訳</th><th class="num">合計</th><th></th></tr></thead><tbody>' +
     list.map(r=>{
       const tags = [];
       if(r.s) tags.push('<span class="tg">出張</span>');
@@ -646,6 +650,8 @@ function renderDetail(){
         '<td>'+esc(r.j||"")+'</td>'+
         '<td>'+(r.kubun?'<span class="kb">'+esc(r.kubun)+'</span>':"")+'</td>'+
         '<td>'+esc(r.f||"")+'</td>'+
+        /* 送った人。古い日報には記録がないので、そのときは空欄 */
+        '<td>'+esc(r.by||"")+'</td>'+
         '<td><div class="brk">'+brkHtml(r)+'</div>'+
           (tags.length?'<div style="margin-top:4px">'+tags.join("")+'</div>':"")+'</td>'+
         '<td class="num big">'+f1(netOf(r))+'</td>'+
@@ -656,12 +662,13 @@ function renderDetail(){
   bindActs("#dTable","ed2");
 
   document.getElementById("dOff").innerHTML = offs.length ? (
-    '<thead><tr><th>日付</th><th>氏名</th><th>理由</th><th>持ち場</th><th>職長</th><th></th></tr></thead><tbody>' +
+    '<thead><tr><th>日付</th><th>氏名</th><th>理由</th><th>持ち場</th><th>職長</th><th>送った人</th><th></th></tr></thead><tbody>' +
     offs.sort((a,b)=>String(b.d).localeCompare(String(a.d))).map(o=>
       '<tr class="off"><td>'+dStr(o.d)+'</td><td>'+esc(o.n)+'</td>'+
       '<td><span class="tg off">'+esc(o.offReason||"休み")+'</span></td>'+
       '<td>'+esc(o.kubun||"")+'</td>'+
       '<td>'+esc(o.f||"")+'</td>'+
+      '<td>'+esc(o.by||"")+'</td>'+
       '<td style="white-space:nowrap">'+actBtns(o,"ed2b")+'</td></tr>').join("") + '</tbody>'
   ) : '<tbody><tr><td class="empty">休みの記録はありません</td></tr></tbody>';
 
@@ -1408,7 +1415,8 @@ function saveEdit(){
   }
 
   /* --- 反映 --- */
-  /* 職長名は「誰が送ったか」なので、いつもこの送信の全員に反映する */
+  /* 職長名は1回の送信でみんな同じなので、いつもこの送信の全員に反映する
+     （「送った人」は別の項目（by）で、ここでは変えない） */
   if(foremanChanged && r.batch){
     batchIdxOf(rows, r.batch).forEach(i=>{ rows[i] = Object.assign({}, rows[i], {f:nf}); });
   }

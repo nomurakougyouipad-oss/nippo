@@ -594,6 +594,8 @@ let S = {
   allow:0, allowE:false,
   /* 送信履歴から直す・消すとき */
   mode:"new", editBatch:null, editYm:null, editAt:"", editB:null, orig:null,
+  /* 直しているとき、その日報を最初に送った人。空なら今の端末の名前を入れる */
+  sentBy:"",
   delB:null, flash:""
 };
 
@@ -1397,11 +1399,14 @@ function buildRows(batch, stamp){
   /* 職長手当（工数）。この送信の全行に同じ値を持たせて、あとから管理画面で直せるようにする */
   const fa=S.foreman ? allowNow() : 0;
   const faE=(S.foreman&&S.allowE) ? 1 : 0;
+  /* 誰が送ったか（by）。職長欄（f）とは別。送信履歴はこれで拾う。
+     直しているときは、最初に送った人をそのまま残す */
+  const by=(S.mode==="edit" ? (S.sentBy||"") : "") || ME || "";
   const rows=[];
   S.sel.forEach(n=>{
     const w=WORKERS.find(x=>x.name===n);
     rows.push({d:S.date,n:n,k:(w?w.kubun:""),shozoku:(w?w.shozoku:""),
-      no:S.job||"",j:jobName||"",kubun:S.kubun,f:S.foreman||"",
+      no:S.job||"",j:jobName||"",kubun:S.kubun,f:S.foreman||"",by:by,
       h:Object.assign({},hoursFor(n)),off:0,offReason:"",
       s:S.checks["出張"]?1:0,y:S.checks["夜勤"]?1:0,
       late:lateFor(n),early:earlyFor(n),
@@ -1410,7 +1415,7 @@ function buildRows(batch, stamp){
   S.off.forEach(o=>{
     const w=WORKERS.find(x=>x.name===o.name);
     rows.push({d:S.date,n:o.name,k:(w?w.kubun:""),shozoku:(w?w.shozoku:""),
-      no:S.job||"",j:jobName||"",kubun:S.kubun,f:S.foreman||"",
+      no:S.job||"",j:jobName||"",kubun:S.kubun,f:S.foreman||"",by:by,
       h:{},off:1,offReason:o.reason,s:0,y:0,late:0,early:0,
       fa:fa,faE:faE,batch:batch,at:stamp});
   });
@@ -1458,6 +1463,7 @@ function continueNext(){
 /* 入力をまっさらに戻す（直している最中のしるしも消す） */
 function resetInput(){
   S.mode="new"; S.editBatch=null; S.editYm=null; S.editAt=""; S.editB=null; S.orig=null;
+  S.sentBy="";
   S.date=todayStr();
   S.job=null; S.jobFree=null; S.all={}; S.ovr={}; S.sel=[]; S.off=[]; S.guests=[]; S.more=false;
   S.checks={出張:false,夜勤:false}; S.late={}; S.early={};
@@ -1466,11 +1472,15 @@ function resetInput(){
 }
 function finishSend(){ resetInput(); goTop(); }
 
-/* ================== 送信履歴（今月・自分が職長で出した分） ================== */
+/* ================== 送信履歴（今月・自分が送った分） ================== */
+/* 拾うのは「誰が送ったか（by）」。職長欄（f）では拾わない。
+   自分がメンバーに入っていなくても、職長欄を空にして送っていても出る。
+   by が入っていない古い日報だけ、今までどおり職長欄で拾う */
+function sentByMe(r){ return r.by ? r.by===ME : (r.f||"")===ME; }
 function myBatches(){
   if(!ME) return [];
   const bt={};
-  monthRows(curYm()).filter(r=>r.f===ME).forEach(r=>{
+  monthRows(curYm()).filter(sentByMe).forEach(r=>{
     const k=rowBatchKey(r); (bt[k]=bt[k]||[]).push(r);
   });
   return Object.keys(bt).map(k=>({key:k, batch:bt[k][0].batch||"", rows:bt[k]}))
@@ -1487,7 +1497,8 @@ function renderHist(){
     S.flash?'<div class="flash">'+esc(S.flash)+'</div>':"";
   HIST=myBatches();
   document.getElementById("histNote").textContent=
-    ME+"さんが職長として送った、今月の日報です。（"+HIST.length+"件・新しい順）";
+    ME+"さんがこの端末から送った、今月の日報です。（"+HIST.length+"件・新しい順）"+
+    "　職長かどうかは関係ありません。";
   document.getElementById("histList").innerHTML=HIST.length?HIST.map((b,i)=>{
     const r=b.rows[0];
     const work=b.rows.filter(x=>!x.off), offs=b.rows.filter(x=>x.off);
@@ -1523,6 +1534,8 @@ function loadBatch(b){
   const r0=rows[0], rc=work[0]||r0;
   S.date=r0.d;
   S.foreman=r0.f||null; S.foremanAuto=false;
+  /* 送った人はそのまま残す（直しても、送った人は変わらない） */
+  S.sentBy=r0.by||"";
   S.job=r0.no||null; S.jobFree=r0.no?null:(r0.j||null);
   S.kubun=r0.kubun||"現場";
   S.sel=work.map(r=>r.n);
@@ -1559,6 +1572,7 @@ function startCopy(i){
   S.flash="";
   loadBatch(b);
   S.mode="new"; S.editB=null; S.editBatch=null; S.editYm=null; S.editAt=""; S.orig=null;
+  S.sentBy="";   /* 新しい送信なので、送った人は今この端末を使っている人になる */
   /* 日付は翌日。先の日付は送れないので今日までにする */
   const d=new Date(b.rows[0].d+"T00:00:00"); d.setDate(d.getDate()+1);
   let ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
