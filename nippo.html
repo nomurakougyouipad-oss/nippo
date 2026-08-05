@@ -245,6 +245,17 @@
   .flash{background:var(--tint);border-left:3px solid var(--green);border-radius:2px;
     padding:12px 14px;font-size:14.5px;color:var(--green-d);margin-bottom:14px;line-height:1.6;}
   .whybox .lb{font-size:13px;color:var(--muted);font-weight:600;margin-bottom:8px;}
+
+  /* ---- 工事一覧のしぼり込み ---- */
+  /* 担当が増えても行が揃うように、幅の決まったグリッドに並べる */
+  .fgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+  .ogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .fgrid .chip,.ogrid .chip{width:100%;min-height:50px;padding:9px 4px;font-size:15px;
+    white-space:normal;line-height:1.3;display:flex;align-items:center;justify-content:center;
+    text-align:center;gap:4px;}
+  .ogrid .chip .n{font-size:11.5px;color:var(--faint);}
+  .ogrid .chip.on .n{color:rgba(243,242,242,.8);}
+  .flbl{font-size:12.5px;color:var(--muted);margin:16px 0 8px;}
   .fixbar{position:sticky;bottom:0;background:var(--paper);padding:14px 0 6px;
     border-top:1px solid var(--line-w);margin-top:24px;}
   .fixbar .sm{display:flex;justify-content:space-between;font-size:14px;color:var(--muted);margin-bottom:10px;}
@@ -420,7 +431,9 @@
   <div class="bar-top"><button class="bk" onclick="goTop()">戻る</button><span class="tt">工事一覧</span></div>
   <div class="wrap">
     <input type="text" id="jSearch" placeholder="注番・件名で検索">
-    <div class="chips" id="jFilters" style="margin:14px 0"></div>
+    <div class="fgrid" id="jFilters" style="margin-top:14px"></div>
+    <div class="flbl">担当でしぼる</div>
+    <div class="ogrid" id="jOwners" style="margin-bottom:16px"></div>
     <div id="jWarn"></div>
     <div style="font-size:13px;color:var(--faint);margin-bottom:10px" id="jCount"></div>
     <div id="jList"></div>
@@ -1657,19 +1670,24 @@ function doDelete(){
 let jFilter="all";
 function renderJobsPage(){
   const q=(document.getElementById("jSearch").value||"").trim();
-  const owners=[...new Set(JOBS.map(j=>j.owner).filter(Boolean))];
   const live=JOBS.filter(j=>CLOSED.indexOf(j.no)<0);
   const redN=live.filter(j=>jobAlert(j)==="red").length;
   const amberN=live.filter(j=>jobAlert(j)==="amber").length;
   const staleN=redN+amberN;
   const fixedN=live.filter(j=>j.fixed).length;
-  const defs=[{k:"all",l:"すべて"},{k:"fixed",l:"常設（"+fixedN+"）"},
-    {k:"stale",l:"要確認（"+staleN+"）"}]
-    .concat(owners.map(o=>({k:o,l:"担当 "+o})))
-    .concat([{k:"closed",l:"閉じた（"+CLOSED.length+"）"}]);
+  const defs=[{k:"all",l:"すべて（"+live.length+"）"},{k:"fixed",l:"常設（"+fixedN+"）"},
+    {k:"stale",l:"要確認（"+staleN+"）"},{k:"closed",l:"閉じた（"+CLOSED.length+"）"}];
   document.getElementById("jFilters").innerHTML=defs.map(f=>
     '<button class="chip sm'+(jFilter===f.k?" on":"")+'" data-k="'+esc(f.k)+'">'+esc(f.l)+'</button>').join("");
-  document.querySelectorAll("#jFilters .chip").forEach(b=>{
+  /* 担当は別のグリッドに分けて、人数が増えても行が揃うようにする */
+  const oc={};
+  live.forEach(j=>{ if(j.owner) oc[j.owner]=(oc[j.owner]||0)+1; });
+  const owners=Object.keys(oc).sort((a,b)=>a.localeCompare(b,"ja"));
+  document.getElementById("jOwners").innerHTML=owners.length?owners.map(o=>
+    '<button class="chip sm'+(jFilter===o?" on":"")+'" data-k="'+esc(o)+'">'+esc(o)+
+    '<span class="n">'+oc[o]+'</span></button>').join("")
+    :'<div class="note" style="margin-top:0">担当者の登録がありません</div>';
+  document.querySelectorAll("#jFilters .chip,#jOwners .chip").forEach(b=>{
     b.onclick=()=>{ jFilter=b.dataset.k; renderJobsPage(); };
   });
   const wtx=[];
