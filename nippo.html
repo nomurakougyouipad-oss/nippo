@@ -469,6 +469,10 @@
 <div class="sheet" id="shJob">
   <h2>工事を選ぶ</h2>
   <div class="chips" id="jobTabs" style="margin-bottom:12px"></div>
+  <div id="jobOwnWrap">
+    <div class="flbl" style="margin-top:0">担当でしぼる</div>
+    <div class="fillrow" id="jobOwners" style="margin-bottom:14px"></div>
+  </div>
   <div id="jtNo">
     <input type="text" id="jobSearch" placeholder="注番・件名で検索" style="margin-bottom:12px">
     <div class="lbl" id="jobListLbl">最近使った工事</div>
@@ -585,7 +589,7 @@ let S = {
   date: todayStr(), foreman:null, job:null, jobFree:null, kubun:"現場",
   sel:[], off:[], guests:[], all:{}, ovr:{}, more:false, foremanAuto:false,
   checks:{出張:false,夜勤:false}, late:{}, early:{},
-  jobTab:"fixed", pad:"0", padTarget:null, calY:0, calM:0, closeTarget:null,
+  jobTab:"fixed", jobOwner:"", pad:"0", padTarget:null, calY:0, calM:0, closeTarget:null,
   mgOpen:{"自社":true,"常駐協力":false,"外注協力":false},
   allow:0, allowE:false,
   /* 送信履歴から直す・消すとき */
@@ -810,7 +814,7 @@ function openSheet(name){
   document.getElementById("bd").classList.add("on");
   if(name==="cal") renderCal();
   if(name==="foreman") renderForemanSheet();
-  if(name==="job") renderJobSheet();
+  if(name==="job"){ S.jobOwner=""; renderJobSheet(); }   /* 開くたびに担当のしぼり込みは外す */
   if(name==="member") renderMemberSheet();
   if(name==="off") renderOffSheet();
 }
@@ -935,17 +939,31 @@ function renderJobSheet(){
   document.getElementById("jobTabs").innerHTML=tabs.map(t=>
     '<button class="chip sm'+(S.jobTab===t.k?" on":"")+'" data-k="'+t.k+'">'+t.l+'</button>').join("");
   document.querySelectorAll("#jobTabs .chip").forEach(b=>{
-    b.onclick=()=>{ S.jobTab=b.dataset.k; renderJobSheet(); };
+    b.onclick=()=>{ S.jobTab=b.dataset.k; S.jobOwner=""; renderJobSheet(); };
   });
   const showList=(S.jobTab==="fixed"||S.jobTab==="no");
+
+  /* 担当でしぼる。工事一覧・注番管理と同じ見た目、同じ並び（件数の多い順） */
+  document.getElementById("jobOwnWrap").style.display=showList?"block":"none";
+  const base=openJobs().filter(j=>S.jobTab==="fixed"?!!j.fixed:!j.fixed);
+  const oc={};
+  base.forEach(j=>{ if(j.owner) oc[j.owner]=(oc[j.owner]||0)+1; });
+  const owners=Object.keys(oc).sort((a,b)=>(oc[b]-oc[a])||a.localeCompare(b,"ja"));
+  document.getElementById("jobOwners").innerHTML=
+    '<button class="chip sm'+(S.jobOwner?"":" on")+'" data-o="">すべて<span class="n">'+base.length+'</span></button>'+
+    owners.map(o=>'<button class="chip sm'+(S.jobOwner===o?" on":"")+'" data-o="'+esc(o)+'">'+
+      esc(o)+'<span class="n">'+oc[o]+'</span></button>').join("");
+  document.querySelectorAll("#jobOwners .chip").forEach(b=>{
+    b.onclick=()=>{ S.jobOwner=b.dataset.o; renderJobSheet(); };
+  });
   document.getElementById("jtNo").style.display=showList?"block":"none";
   document.getElementById("jtFree").style.display=S.jobTab==="free"?"block":"none";
   document.getElementById("jtNew").style.display=S.jobTab==="new"?"block":"none";
   document.getElementById("jobListLbl").textContent=S.jobTab==="fixed"?"年間を通して使う注番":"最近使った工事";
 
   const q=(document.getElementById("jobSearch").value||"").trim();
-  const list=openJobs()
-    .filter(j=>S.jobTab==="fixed"?!!j.fixed:!j.fixed)
+  const list=base
+    .filter(j=>!S.jobOwner||(j.owner||"")===S.jobOwner)
     .filter(j=>!q||(j.no+" "+j.name).indexOf(q)>=0)
     .sort((a,b)=>{
       if(S.jobTab==="fixed") return String(a.no).localeCompare(String(b.no));
