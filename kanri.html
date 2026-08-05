@@ -729,6 +729,9 @@ function aggPeople(kubunFilter){
       grp: w ? kubunGroup(w) : ((src.k&&src.k!=="自社") ? "常駐協力" : "自社"),
       shozoku: (w&&w.shozoku) || src.shozoku || "",
       days:new Set(mine.map(r=>r.d)).size,
+      /* 出張・夜勤は1日1回。同じ日に2件送られていても、その日は1回 */
+      tripD:new Set(mine.filter(r=>r.s).map(r=>r.d)).size,
+      nightD:new Set(mine.filter(r=>r.y).map(r=>r.d)).size,
       total:mine.reduce((a,r)=>a+netOf(r),0),
       kinds:kinds, offMap:offMap, offN:myOff.length,
       allow:allow, rows:mine, offRows:myOff
@@ -844,9 +847,14 @@ function renderOne(){
   const figs = [
     {l:"出勤日数", v:p.days+"日", big:true},
     {l:"残業", v:f1(g(OT2_KINDS)), big:true},
-    {l:"人工（÷8）", v:ninku(p.kinds).toFixed(2)},
-    {l:"職長手当（工数）", v:(p.allow?allowTx(p.allow):"―"), g:true},
   ];
+  /* 出張・夜勤は1日1回。0回のときは出さない */
+  if(p.tripD)  figs.push({l:"出張", v:p.tripD+"回", big:true});
+  if(p.nightD) figs.push({l:"夜勤", v:p.nightD+"回", big:true});
+  figs.push(
+    {l:"人工（÷8）", v:ninku(p.kinds).toFixed(2)},
+    {l:"職長手当（工数）", v:(p.allow?allowTx(p.allow):"―"), g:true}
+  );
   document.getElementById("oneFigs").innerHTML = figs.map(f=>{
     const zero = (f.v==="0.0"||f.v==="0.00"||f.v==="―"||f.v==="0日");
     return '<div class="f"><div class="l">'+esc(f.l)+'</div>'+

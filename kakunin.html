@@ -53,7 +53,7 @@
   .vtabs button.on{background:var(--green);color:#f3f2f2;border-color:var(--green);font-weight:600;}
 
   /* ---- 月合計：出勤日数と残業だけ大きく。総合計は出さない ---- */
-  .figs2{display:flex;gap:34px;flex-wrap:wrap;align-items:baseline;margin-top:6px;}
+  .figs2{display:flex;gap:16px 28px;flex-wrap:wrap;align-items:baseline;margin-top:6px;}
   .figs2 .f .l{font-size:13px;color:var(--muted);}
   .figs2 .f .v{font-size:42px;font-weight:700;line-height:1.1;}
   .figs2 .f .v span{font-size:16px;font-weight:400;color:var(--muted);margin-left:4px;}
@@ -582,9 +582,14 @@ function renderView(){
   /* 月合計：大きく出すのは「出勤日数」と「残業」だけ。総合計は出さない */
   const sum=k=>work.reduce((a,r)=>a+((r.h&&r.h[k])||0),0);
   const ot=OT_KINDS.reduce((a,k)=>a+sum(k),0);
+  /* 出張・夜勤は1日1回。同じ日に2件送られていても、その日は1回。0回のときは出さない */
+  const tripD=new Set(work.filter(r=>r.s).map(r=>r.d)).size;
+  const nightD=new Set(work.filter(r=>r.y).map(r=>r.d)).size;
   document.getElementById("vFigs").innerHTML=
     '<div class="f"><div class="l">出勤日数</div><div class="v'+(days?"":" z")+'">'+days+'<span>日</span></div></div>'+
-    '<div class="f"><div class="l">残業</div><div class="v'+(ot?"":" z")+'">'+f1(ot)+'</div></div>';
+    '<div class="f"><div class="l">残業</div><div class="v'+(ot?"":" z")+'">'+f1(ot)+'</div></div>'+
+    (tripD ?'<div class="f"><div class="l">出張</div><div class="v">'+tripD+'<span>回</span></div></div>':'')+
+    (nightD?'<div class="f"><div class="l">夜勤</div><div class="v">'+nightD+'<span>回</span></div></div>':'');
 
   const lateT=work.reduce((a,r)=>a+(r.late||0),0);
   const earlyT=work.reduce((a,r)=>a+(r.early||0),0);
