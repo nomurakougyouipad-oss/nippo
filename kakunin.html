@@ -79,6 +79,10 @@
   .brk .mn{color:var(--mag-d);font-weight:600;}
   .brk .sep{color:var(--faint);margin:0 5px;}
   .brk .z{color:var(--faint);}
+  /* 出張・夜勤のタグ。管理画面の明細一覧と同じ見た目 */
+  .tgs{margin-top:5px;}
+  .tg{display:inline-block;padding:2px 7px;background:var(--field);color:var(--muted);
+    border-radius:2px;font-size:13px;margin-right:4px;}
   .vsent{padding:15px 0;border-bottom:1px solid var(--line-w);}
   .vsent .at{font-size:13px;color:var(--faint);}
   .vsent .j{margin-top:5px;font-size:17px;}
@@ -593,11 +597,16 @@ function renderView(){
 
   document.getElementById("vDays").innerHTML=mine.length?mine.map(r=>{
     const mt=matesOf(r, rows);
+    /* 出張・夜勤のタグ。管理画面の明細一覧と同じ出し方 */
+    const tags=[];
+    if(!r.off && r.s) tags.push('<span class="tg">出張</span>');
+    if(!r.off && r.y) tags.push('<span class="tg">夜勤</span>');
     return '<div class="vday'+(r.off?" off":"")+'">'+
       '<div class="top"><span class="d">'+dShort(r.d)+'</span>'+
         (r.off?'':'<span class="tot">'+f1(netOf(r))+'</span>')+'</div>'+
       '<div class="j">'+(r.no?'<span class="no">'+esc(r.no)+'</span>':'')+esc(r.j||"")+'</div>'+
       '<div class="brk">'+(r.off?'<span class="mn">'+esc(r.offReason||"休み")+'</span>':brkHtml(r))+'</div>'+
+      (tags.length?'<div class="tgs">'+tags.join("")+'</div>':'')+
       (r.f?'<div class="h">職長 '+esc(r.f)+'</div>':'')+
       (mt.length?'<div class="mates">一緒に行った人：<b>'+mt.map(esc).join("、")+'</b></div>':'')+
     '</div>';

@@ -868,12 +868,17 @@ function renderOne(){
     '<thead><tr><th>日付</th><th>注番</th><th>工事件名</th><th>区分</th><th>職長</th>'+
     '<th>時間の内訳</th><th class="num">合計</th><th></th></tr></thead><tbody>'+
     rows.map(r=>{
+      /* 出張・夜勤のタグ。明細一覧と同じ出し方 */
+      const tags = [];
+      if(r.s) tags.push('<span class="tg">出張</span>');
+      if(r.y) tags.push('<span class="tg">夜勤</span>');
       return '<tr><td>'+dStr(r.d)+'</td>'+
         '<td><span class="no'+(r.no?"":" free")+'">'+esc(r.no||"―")+'</span></td>'+
         '<td>'+esc(r.j||"")+'</td>'+
         '<td>'+(r.kubun?'<span class="kb">'+esc(r.kubun)+'</span>':"")+'</td>'+
         '<td>'+esc(r.f||"")+'</td>'+
-        '<td><div class="brk">'+brkHtml(r)+'</div></td>'+
+        '<td><div class="brk">'+brkHtml(r)+'</div>'+
+          (tags.length?'<div style="margin-top:4px">'+tags.join("")+'</div>':"")+'</td>'+
         '<td class="num big">'+f1(netOf(r))+'</td>'+
         '<td style="white-space:nowrap">'+actBtns(r,"ed3")+'</td></tr>';
     }).join("")+'</tbody>'
