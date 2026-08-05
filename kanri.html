@@ -1571,7 +1571,8 @@ function sheetForPerson(p){
   const tline = ["月合計","",""];
   XL_COLS.forEach(c=>{
     if(c.check){
-      const n = p.rows.filter(r=>(c.k==="出張"?r.s:r.y)).length;
+      /* 出張・夜勤は1日1回。同じ日に2件送られていても、その日は1回 */
+      const n = (c.k==="出張") ? p.tripD : p.nightD;
       tline.push(n||"");
     } else tline.push(p.kinds[c.k] ? round1(p.kinds[c.k]) : "");
   });
@@ -1592,8 +1593,9 @@ function sumLine(label, list){
   const t=[label,""];
   PAPER_KINDS.forEach(k=>{ const v=list.reduce((a,p)=>a+(p.kinds[k]||0),0); t.push(v?round1(v):""); });
   const nk = list.reduce((a,p)=>a+WORK_KINDS.reduce((x,k)=>x+(p.kinds[k]||0),0),0)/8;
-  t.push(list.reduce((a,p)=>a+p.rows.filter(r=>r.s).length,0)||"",
-         list.reduce((a,p)=>a+p.rows.filter(r=>r.y).length,0)||"",
+  /* 出張・夜勤は1人1日1回で数えたものを足す */
+  t.push(list.reduce((a,p)=>a+p.tripD,0)||"",
+         list.reduce((a,p)=>a+p.nightD,0)||"",
          round1(list.reduce((a,p)=>a+p.total,0)), Number(nk.toFixed(2)),
          list.reduce((a,p)=>a+p.days,0)||"", offText(mergeOff(list))||"",
          round1(list.reduce((a,p)=>a+p.allow,0))||"");
@@ -1605,8 +1607,7 @@ function sheetSummary(agg){
   agg.forEach(p=>{
     const line=[p.n,p.k];
     PAPER_KINDS.forEach(k=>line.push(p.kinds[k]?round1(p.kinds[k]):""));
-    const trip=p.rows.filter(r=>r.s).length, night=p.rows.filter(r=>r.y).length;
-    line.push(trip||"", night||"", round1(p.total), Number(ninku(p.kinds).toFixed(2)),
+    line.push(p.tripD||"", p.nightD||"", round1(p.total), Number(ninku(p.kinds).toFixed(2)),
       p.days||"", offText(p.offMap)||"", round1(p.allow)||"");
     aoa.push(line);
   });
@@ -1625,7 +1626,7 @@ function sheetByCompany(agg){
     list.forEach(p=>{
       const line=[co, p.n, p.k];
       PAPER_KINDS.forEach(k=>line.push(p.kinds[k]?round1(p.kinds[k]):""));
-      line.push(p.rows.filter(r=>r.s).length||"", p.rows.filter(r=>r.y).length||"",
+      line.push(p.tripD||"", p.nightD||"",
         round1(p.total), Number(ninku(p.kinds).toFixed(2)),
         p.days||"", offText(p.offMap)||"", round1(p.allow)||"");
       aoa.push(line);
