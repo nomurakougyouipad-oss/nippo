@@ -102,7 +102,14 @@
     cursor:pointer;font-family:inherit;}
   .mebtn .s{font-size:13.5px;font-weight:400;margin-top:7px;color:rgba(243,242,242,.75);}
   .obtn{display:block;width:100%;text-align:left;padding:18px;border-radius:2px;background:transparent;
-    color:var(--ink);border:1px solid var(--line-s);font-size:18px;cursor:pointer;font-family:inherit;}
+    color:var(--ink);border:1px solid var(--line-s);font-size:18px;cursor:pointer;font-family:inherit;
+    line-height:1.25;}
+  .obtn .s{font-size:13px;font-weight:400;margin-top:6px;color:var(--muted);}
+  .obtn.open{background:var(--tint);border:1.5px solid var(--green);color:var(--green);font-weight:600;}
+  .obtn.open .s{color:var(--green);}
+  /* 会社のボタンは、名前のボタンとはっきり分ける */
+  .cobox{margin-top:10px;padding:14px;background:var(--card);border:1px solid var(--line-w);border-radius:2px;}
+  .cobox .lb{font-size:12.5px;color:var(--faint);margin-bottom:9px;}
   .mebar{display:flex;align-items:baseline;gap:10px;margin-top:10px;padding:11px 14px;
     background:var(--card);border:1px solid var(--line-w);border-radius:2px;}
   .mebar .l{font-size:12.5px;color:var(--faint);}
@@ -137,7 +144,13 @@
   <div class="brand">よつば建設工業</div>
   <h1 class="big" style="font-size:30px">お名前を選んでください</h1>
   <div class="sub" id="pkSub"></div>
-  <div style="margin-top:20px"><input type="text" id="pkSearch" placeholder="名前で探す"></div>
+
+  <button class="obtn" id="pkCoBtn" style="margin-top:22px" onclick="toggleCo()">会社で選ぶ
+    <div class="s">協力会社の記録を、会社ごとにまとめて見ます</div></button>
+  <div id="pkCos" style="display:none"></div>
+
+  <div class="sec-lbl">この端末を使う人を選ぶ</div>
+  <div><input type="text" id="pkSearch" placeholder="名前で探す"></div>
   <div id="pkList" style="margin-top:18px"></div>
   <button class="lnk" id="pkCancel" style="display:none;margin-top:18px" onclick="goHome()">やめる</button>
 </div>
@@ -155,10 +168,6 @@
     <span class="l">この端末</span><span class="n" id="homeMeName"></span>
     <button class="ch" onclick="openPick(true)">名前を変える</button>
   </div>
-
-  <div class="sec-lbl">協力会社</div>
-  <div class="note" style="margin-top:0">会社をタップすると、その会社の全員の記録が見られます。</div>
-  <div class="cogrid" id="homeCos" style="margin-top:10px"></div>
 
   <div class="sec-lbl">ほかの人を見る</div>
   <button class="obtn" onclick="goNames()">名前の一覧から選ぶ</button>
@@ -179,7 +188,7 @@
 <!-- ===== 協力会社ごと ===== -->
 <div id="scCo" class="screen">
   <div class="bar-top">
-    <button class="bk" onclick="goHome()">戻る</button>
+    <button class="bk" onclick="backFromCo()">戻る</button>
     <span class="tt" id="coTitle"></span>
     <select id="coMonth"></select>
   </div>
@@ -245,13 +254,13 @@ const ALLOW_BORDER = 4;   /* 実働がこの時間以下なら 0.5 */
 const SCREENS = ["scPick","scHome","scNames","scCo","scView"];
 
 let ALLDATA = {}, WORKERS = [];
-let V = { name:null, month:null, tab:"me", from:"home", co:null, coMonth:null };
+let V = { name:null, month:null, tab:"me", from:"home", co:null, coMonth:null, coFrom:"home" };
 
 /* この端末を使う人。送信アプリと同じ鍵（同じ場所に置いてあるので共通） */
 const ME_KEY = "yotsuba.me";
 let ME = "";
 try{ ME = localStorage.getItem(ME_KEY) || ""; }catch(e){ ME = ""; }
-let pkCanCancel = false;
+let pkCanCancel = false, pkCoOpen = false;
 
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function isKana(s){ return /^[ァ-ヴー]+$/.test(s); }
@@ -376,19 +385,45 @@ function backFromView(){
   if(V.from==="names"){ showScreen("scNames"); renderNames(); return; }
   goHome();
 }
+/* 会社の画面から戻る。「名前を変える」から来ていたら、そこへ返す */
+function backFromCo(){
+  V.co=null;
+  if(V.coFrom==="pick"){ openPick(pkCanCancel, true); return; }
+  goHome();
+}
 
 /* ================== この端末の名前 ================== */
 function saveMe(n){ ME=n; try{ localStorage.setItem(ME_KEY,n); }catch(e){} }
-function openPick(canCancel){
+function openPick(canCancel, keepCo){
   pkCanCancel=!!canCancel;
+  if(!keepCo) pkCoOpen=false;
   document.getElementById("pkCancel").style.display=pkCanCancel?"block":"none";
   document.getElementById("pkSub").textContent=pkCanCancel
     ? "この端末を使う人を選び直します。今は「"+(ME||"未登録")+"」です。"
     : "この端末を使う人を1回だけ登録します。次からは、開くとすぐ自分の記録が出ます。";
   showScreen("scPick"); renderPick();
 }
+/* 会社のボタンは、押したときだけ出す（自社の職人には関係のない機能なので） */
+function toggleCo(){ pkCoOpen=!pkCoOpen; renderPickCo(); }
+function renderPickCo(){
+  const box=document.getElementById("pkCos");
+  document.getElementById("pkCoBtn").classList.toggle("open", pkCoOpen);
+  if(!pkCoOpen){ box.style.display="none"; box.innerHTML=""; return; }
+  const cos=companies();
+  box.style.display="block";
+  box.innerHTML='<div class="cobox"><div class="lb">会社をタップすると、その会社の全員の記録が見られます</div>'+
+    (cos.length
+      ? '<div class="cogrid">'+cos.map(c=>'<button data-c="'+esc(c.name)+'">'+esc(c.name)+
+          '<span class="c">'+c.members.length+'人</span></button>').join("")+'</div>'
+      : '<div class="note" style="margin-top:0">協力会社の登録がまだありません。</div>')+
+    '</div>';
+  box.querySelectorAll("button[data-c]").forEach(b=>{
+    b.onclick=()=>{ V.coFrom="pick"; openCo(b.dataset.c); };
+  });
+}
 function renderPick(){
   if(!document.getElementById("scPick").classList.contains("on")) return;
+  renderPickCo();
   const el=document.getElementById("pkList");
   const map=pickNames(), names=Object.keys(map);
   if(!names.length){ el.innerHTML='<div class="note" style="margin-top:0">名簿を読み込んでいます…</div>'; return; }
@@ -416,15 +451,6 @@ function renderHome(){
     : 'お名前を登録する<div class="s">この端末を使う人を選びます</div>';
   btn.onclick=ME?(()=>openView(ME,"home")):(()=>openPick(false));
   document.getElementById("homeMeName").textContent=ME||"未登録";
-
-  const cos=companies();
-  document.getElementById("homeCos").innerHTML=cos.length?cos.map(c=>
-    '<button data-c="'+esc(c.name)+'">'+esc(c.name)+
-    '<span class="c">'+c.members.length+'人</span></button>').join("")
-    :'<div class="note" style="margin-top:0">協力会社の登録がまだありません。</div>';
-  document.querySelectorAll("#homeCos button").forEach(b=>{
-    b.onclick=()=>openCo(b.dataset.c);
-  });
 
   const ms=Object.keys(ALLDATA).sort();
   const last=ms.length?ALLDATA[ms[ms.length-1]]:null;
