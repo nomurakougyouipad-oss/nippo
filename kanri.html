@@ -26,14 +26,16 @@
   body{font-family:"Hiragino Sans","Yu Gothic UI","Noto Sans JP",sans-serif;
     background:var(--paper);color:var(--ink);line-height:1.6;font-size:15px;}
 
-  /* --- ログイン --- */
+  /* --- 名前を入れて開く画面 --- */
   #lock{position:fixed;inset:0;background:var(--paper);z-index:100;
     display:flex;align-items:center;justify-content:center;}
   #lock .box{width:320px;text-align:center;}
   #lock h1{font-size:20px;margin-bottom:6px;}
   #lock .sb{font-size:12px;color:var(--faint);letter-spacing:.1em;margin-bottom:24px;}
-  #lock input{width:100%;min-height:56px;padding:14px;text-align:center;font-size:24px;
-    letter-spacing:.4em;background:var(--field);border:1px solid var(--line-s);border-radius:2px;outline:none;}
+  #lock input{width:100%;min-height:56px;padding:14px;text-align:center;font-size:18px;
+    background:var(--field);border:1px solid var(--line-s);border-radius:2px;outline:none;
+    font-family:inherit;color:var(--ink);}
+  #lock input:focus{border-color:var(--green);}
   #lock button{width:100%;min-height:52px;margin-top:12px;background:var(--green);color:#f3f2f2;
     border:none;border-radius:2px;font-size:16px;font-weight:600;cursor:pointer;}
   #lock .err{color:var(--mag-d);font-size:14px;margin-top:10px;min-height:20px;}
@@ -235,10 +237,9 @@
   <div class="box">
     <h1>管理画面</h1>
     <div class="sb">よつば建設工業 日報</div>
-    <input type="password" id="pin" inputmode="numeric" placeholder="････" maxlength="8">
-    <input type="text" id="who" placeholder="あなたの名前" style="margin-top:10px;letter-spacing:normal;font-size:17px">
-    <button onclick="tryPin()">開く</button>
-    <div class="err" id="pinErr"></div>
+    <input type="text" id="who" placeholder="あなたの名前">
+    <button onclick="enterAdmin()">開く</button>
+    <div class="err" id="lockErr"></div>
     <div style="font-size:12.5px;color:var(--faint);margin-top:12px;line-height:1.6">
       名前は、日報を直したときの記録に残ります。</div>
   </div>
@@ -391,7 +392,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-const ADMIN_PIN = "0428";
 const MAIN_KINDS = ["平日工場","平日現場","工場残業","現場残業"];
 const MORE_KINDS = ["休日工場","休日現場","移動行き","移動帰り","早出","深夜","突発"];
 const ALL_KINDS  = MAIN_KINDS.concat(MORE_KINDS);
@@ -512,19 +512,16 @@ function termTx(j){
   return (j.start? dOnly(j.start):"―") + " 〜 " + (j.end? dOnly(j.end):"―");
 }
 
-/* ============ ログイン ============ */
-function tryPin(){
-  const v = document.getElementById("pin").value;
+/* ============ 名前を入れて開く ============ */
+/* 暗証番号はやめました。事務所用のURLを知っている人だけが開く前提です。
+   名前は、日報を直したときの記録（修正履歴）に残すために聞いています。 */
+function enterAdmin(){
   const w = (document.getElementById("who").value||"").trim();
-  if(v !== ADMIN_PIN){
-    document.getElementById("pinErr").textContent = "番号が違います";
-    document.getElementById("pin").value = "";
-    return;
-  }
   if(!w){
-    document.getElementById("pinErr").textContent = "あなたの名前を入れてください";
+    document.getElementById("lockErr").textContent = "あなたの名前を入れてください";
     return;
   }
+  document.getElementById("lockErr").textContent = "";
   WHO = w;
   try{ localStorage.setItem("nippoWho", w); }catch(e){}
   document.getElementById("whoTx").textContent = WHO;
@@ -533,7 +530,7 @@ function tryPin(){
   boot();
 }
 try{ const w=localStorage.getItem("nippoWho"); if(w) document.getElementById("who").value=w; }catch(e){}
-document.getElementById("pin").addEventListener("keydown", e=>{ if(e.key==="Enter") tryPin(); });
+document.getElementById("who").addEventListener("keydown", e=>{ if(e.key==="Enter") enterAdmin(); });
 
 /* ============ 起動 ============ */
 let booted = false;
