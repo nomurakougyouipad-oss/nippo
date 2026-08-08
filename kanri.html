@@ -26,18 +26,28 @@
   body{font-family:"Hiragino Sans","Yu Gothic UI","Noto Sans JP",sans-serif;
     background:var(--paper);color:var(--ink);line-height:1.6;font-size:15px;}
 
-  /* --- 名前を入れて開く画面 --- */
+  /* --- 最初の画面（注番管理／日報管理をえらぶ） --- */
   #lock{position:fixed;inset:0;background:var(--paper);z-index:100;
     display:flex;align-items:center;justify-content:center;}
-  #lock .box{width:320px;text-align:center;}
+  #lock .box{width:330px;text-align:center;}
   #lock h1{font-size:20px;margin-bottom:6px;}
   #lock .sb{font-size:12px;color:var(--faint);letter-spacing:.1em;margin-bottom:24px;}
   #lock input{width:100%;min-height:56px;padding:14px;text-align:center;font-size:18px;
     background:var(--field);border:1px solid var(--line-s);border-radius:2px;outline:none;
     font-family:inherit;color:var(--ink);}
   #lock input:focus{border-color:var(--green);}
-  #lock button{width:100%;min-height:52px;margin-top:12px;background:var(--green);color:#f3f2f2;
-    border:none;border-radius:2px;font-size:16px;font-weight:600;cursor:pointer;}
+  #lock #pin{font:600 22px/1.2 ui-monospace,monospace;letter-spacing:.4em;}
+  #lock button{width:100%;min-height:52px;margin-top:12px;padding:13px 16px;text-align:left;
+    background:var(--green);color:#f3f2f2;border:none;border-radius:2px;
+    font-size:16px;font-weight:600;font-family:inherit;cursor:pointer;}
+  #lock button .s{display:block;margin-top:4px;font-size:12.5px;font-weight:400;
+    line-height:1.5;color:rgba(243,242,242,.8);}
+  #lock button.o{background:transparent;color:var(--ink);border:1px solid var(--line-s);}
+  #lock button.o .s{color:var(--muted);}
+  #lock #lockPin button{text-align:center;}
+  #lock .sep{height:1px;background:var(--line);margin:22px 0 16px;}
+  #lock .fl{font-size:13px;color:var(--muted);margin-bottom:8px;}
+  #lock .hint{font-size:12.5px;color:var(--faint);margin-top:12px;line-height:1.6;}
   #lock .err{color:var(--mag-d);font-size:14px;margin-top:10px;min-height:20px;}
 
   /* --- レイアウト --- */
@@ -237,11 +247,27 @@
   <div class="box">
     <h1>管理画面</h1>
     <div class="sb">よつば建設工業 日報</div>
-    <input type="text" id="who" placeholder="あなたの名前">
-    <button onclick="enterAdmin()">開く</button>
+
+    <div id="lockPick">
+      <button class="o" onclick="openReg()">注番管理
+        <span class="s">注番の登録・編集。暗証番号も名前も要りません</span></button>
+
+      <div class="sep"></div>
+
+      <input type="text" id="who" placeholder="あなたの名前">
+      <button onclick="askPin()">日報管理
+        <span class="s">明細一覧・個人別・Excel出力。暗証番号が要ります</span></button>
+      <div class="hint">名前は、日報を直したときの記録に残ります。</div>
+    </div>
+
+    <div id="lockPin" style="display:none">
+      <div class="fl">日報管理の暗証番号を入れてください</div>
+      <input type="password" id="pin" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="＊＊＊＊">
+      <button onclick="enterAdmin()">開く</button>
+      <button class="o" onclick="showPinStep(false)">もどる</button>
+    </div>
+
     <div class="err" id="lockErr"></div>
-    <div style="font-size:12.5px;color:var(--faint);margin-top:12px;line-height:1.6">
-      名前は、日報を直したときの記録に残ります。</div>
   </div>
 </div>
 
@@ -254,10 +280,12 @@
     <div class="head">
       <h2 id="ttl"></h2>
       <div id="ttlMonth" style="font-size:17px;font-weight:600;color:var(--green)"></div>
-      <div style="font-size:13px;color:var(--faint)">事務所 ／ <span id="whoTx"></span></div>
+      <div style="font-size:13px;color:var(--faint)" id="whoLine">事務所 ／ <span id="whoTx"></span></div>
       <div class="ctrl">
         <select id="monthSel"></select>
         <span id="extraCtrl"></span>
+        <button class="back" id="topBack" style="display:none"
+          onclick="location.reload()">最初の画面にもどる</button>
       </div>
     </div>
 
@@ -512,25 +540,72 @@ function termTx(j){
   return (j.start? dOnly(j.start):"―") + " 〜 " + (j.end? dOnly(j.end):"―");
 }
 
-/* ============ 名前を入れて開く ============ */
-/* 暗証番号はやめました。事務所用のURLを知っている人だけが開く前提です。
-   名前は、日報を直したときの記録（修正履歴）に残すために聞いています。 */
-function enterAdmin(){
-  const w = (document.getElementById("who").value||"").trim();
-  if(!w){
-    document.getElementById("lockErr").textContent = "あなたの名前を入れてください";
-    return;
-  }
-  document.getElementById("lockErr").textContent = "";
-  WHO = w;
-  try{ localStorage.setItem("nippoWho", w); }catch(e){}
-  document.getElementById("whoTx").textContent = WHO;
+/* ============ 最初の画面（注番管理／日報管理） ============ */
+/* 担当が分かれています。
+   ・注番を発行する2名 … 「注番管理」だけ。暗証番号も名前も要りません
+     （注番の操作は修正履歴に残さないので、名前は聞きません）
+   ・日報を管理する1名 … 「日報管理」。暗証番号のあと、今までどおり全部使えます
+     （名前は、日報を直したときの記録に残すために聞いています）
+   暗証番号は、注番の担当者が日報をさわらないようにするための仕切りです。
+   このページのもとの文字を見れば分かる番号なので、外の人に対する鍵にはなりません。
+   URLを事務所以外に配らない運用は、今までどおり続けてください。 */
+const ADMIN_PIN = "9919";
+let MODE = "full";          /* "full"＝日報管理（全機能） / "reg"＝注番管理だけ */
+
+function lockErr(m){ document.getElementById("lockErr").textContent = m || ""; }
+function showPinStep(on){
+  document.getElementById("lockPick").style.display = on ? "none" : "block";
+  document.getElementById("lockPin").style.display  = on ? "block" : "none";
+  lockErr("");
+  document.getElementById("pin").value = "";
+  document.getElementById(on ? "pin" : "who").focus();
+}
+function startApp(){
   document.getElementById("lock").style.display = "none";
   document.getElementById("app").classList.add("on");
   boot();
 }
+
+/* ---- 注番管理だけを開く（暗証番号なし） ---- */
+function openReg(){
+  MODE = "reg";
+  tab  = "reg";
+  /* 日報の画面と、直す・削除のダイアログは、もとの文字ごと取り除く */
+  ["pDetail","pPerson","pJob","pLog","pExcel","mEdit","mDel"].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.parentNode.removeChild(el);
+  });
+  const nv = document.querySelector("nav");
+  if(nv) nv.parentNode.removeChild(nv);
+  document.getElementById("monthSel").style.display = "none";
+  document.getElementById("whoLine").textContent = "よつば建設工業 ／ 注番管理";
+  document.getElementById("topBack").style.display = "block";
+  startApp();
+}
+
+/* ---- 日報管理（暗証番号あり） ---- */
+function askPin(){
+  const w = (document.getElementById("who").value||"").trim();
+  if(!w){ lockErr("あなたの名前を入れてください"); document.getElementById("who").focus(); return; }
+  try{ localStorage.setItem("nippoWho", w); }catch(e){}
+  showPinStep(true);
+}
+function enterAdmin(){
+  const p = (document.getElementById("pin").value||"").trim();
+  if(p !== ADMIN_PIN){
+    lockErr("暗証番号が違います");
+    document.getElementById("pin").value = "";
+    document.getElementById("pin").focus();
+    return;
+  }
+  lockErr("");
+  WHO = (document.getElementById("who").value||"").trim();
+  document.getElementById("whoTx").textContent = WHO;
+  startApp();
+}
 try{ const w=localStorage.getItem("nippoWho"); if(w) document.getElementById("who").value=w; }catch(e){}
-document.getElementById("who").addEventListener("keydown", e=>{ if(e.key==="Enter") enterAdmin(); });
+document.getElementById("who").addEventListener("keydown", e=>{ if(e.key==="Enter") askPin(); });
+document.getElementById("pin").addEventListener("keydown", e=>{ if(e.key==="Enter") enterAdmin(); });
 
 /* ============ 起動 ============ */
 let booted = false;
@@ -540,7 +615,9 @@ function boot(){
   db.ref("master/workers").on("value", s=>{ WORKERS = Object.values(s.val()||{}); render(); });
   db.ref("master/jobs").on("value",    s=>{ JOBS    = Object.values(s.val()||{}); render(); });
   db.ref("master/closed").on("value",  s=>{ CLOSED  = s.val()||[]; render(); });
-  db.ref("log").on("value", s=>{ const v=s.val()||{}; LOG=Object.keys(v).map(k=>v[k]); render(); });
+  /* 修正履歴は日報管理でしか使いません */
+  if(MODE==="full")
+    db.ref("log").on("value", s=>{ const v=s.val()||{}; LOG=Object.keys(v).map(k=>v[k]); render(); });
   db.ref("nippo").on("value", s=>{
     ALLDATA = s.val() || {};
     const ms = Object.keys(ALLDATA).sort().reverse();
@@ -559,25 +636,30 @@ document.getElementById("monthSel").addEventListener("change", e=>{
 });
 
 function renderNav(){
-  const items = [
-    {k:"detail", l:"明細一覧",   s:"全員分の日報"},
-    {k:"person", l:"個人別",     s:"月合計・職長手当"},
-    {k:"job",    l:"工事別工数", s:"注番・区分ごと"},
-    {k:"reg",    l:"注番管理",   s:"登録・編集・削除"},
-    {k:"log",    l:"修正履歴",   s:"誰がいつ直したか"},
-    {k:"excel",  l:"Excel出力",  s:"紙の日報と同じ列"},
-  ];
-  document.getElementById("nav").innerHTML = items.map(i=>
-    '<button class="'+(tab===i.k?"on":"")+'" data-k="'+i.k+'">'+
-    '<div class="l">'+i.l+'</div><div class="s">'+i.s+'</div></button>').join("");
-  document.querySelectorAll("#nav button").forEach(b=>{
-    b.onclick = ()=>{ tab = b.dataset.k; curOne = null; renderNav(); render(); };
-  });
+  /* 注番管理だけのときは、左のメニューごと取り除いてあります */
+  const navEl = document.getElementById("nav");
+  if(navEl){
+    const items = [
+      {k:"detail", l:"明細一覧",   s:"全員分の日報"},
+      {k:"person", l:"個人別",     s:"月合計・職長手当"},
+      {k:"job",    l:"工事別工数", s:"注番・区分ごと"},
+      {k:"reg",    l:"注番管理",   s:"登録・編集・削除"},
+      {k:"log",    l:"修正履歴",   s:"誰がいつ直したか"},
+      {k:"excel",  l:"Excel出力",  s:"紙の日報と同じ列"},
+    ];
+    navEl.innerHTML = items.map(i=>
+      '<button class="'+(tab===i.k?"on":"")+'" data-k="'+i.k+'">'+
+      '<div class="l">'+i.l+'</div><div class="s">'+i.s+'</div></button>').join("");
+    document.querySelectorAll("#nav button").forEach(b=>{
+      b.onclick = ()=>{ tab = b.dataset.k; curOne = null; renderNav(); render(); };
+    });
+  }
   const t = {detail:"明細一覧", person:"個人別", job:"工事別工数", reg:"注番管理", log:"修正履歴", excel:"Excel出力"}[tab];
   document.getElementById("ttl").textContent = t;
   updateTitleMonth();
   ["pDetail","pPerson","pJob","pReg","pLog","pExcel"].forEach((id,i)=>{
-    document.getElementById(id).classList.toggle("on", ["detail","person","job","reg","log","excel"][i]===tab);
+    const el = document.getElementById(id);
+    if(el) el.classList.toggle("on", ["detail","person","job","reg","log","excel"][i]===tab);
   });
   renderExtraCtrl();
 }
@@ -595,6 +677,7 @@ function ymJP(m){ const a=String(m||"").split("-"); return a[0]+"年"+Number(a[1
 /* ============ 描画 ============ */
 function render(){
   if(!booted) return;
+  if(MODE==="reg") tab = "reg";   /* 注番管理だけの人は、ほかの画面に移りません */
   renderExtraCtrl();
   if(tab==="detail") renderDetail();
   else if(tab==="person") renderPerson();
