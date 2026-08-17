@@ -509,7 +509,8 @@
   <div class="note" style="margin-top:0">選ぶと「休み」で入り、⑤メンバーからは自動で外れます。有給などはあとで選べます。</div>
   <div id="offSelected" style="margin-top:14px"></div>
   <div class="lbl">＋ 休みの人を追加</div>
-  <div class="ngrid" id="offCandidates"></div>
+  <div class="mgtabs" id="offMGroups"></div>
+  <div id="offCandidates"></div>
   <button class="btn o sm" style="margin-top:14px" onclick="closeSheet()">閉じる</button>
 </div>
 
@@ -591,6 +592,7 @@ let S = {
   checks:{出張:false,夜勤:false}, late:{}, early:{},
   jobTab:"fixed", jobOwner:"", pad:"0", padTarget:null, calY:0, calM:0, closeTarget:null,
   mgOpen:{"自社":true,"常駐協力":false,"外注協力":false},
+  offMgOpen:{"自社":true,"常駐協力":false,"外注協力":false},
   allow:0, allowE:false,
   /* 送信履歴から直す・消すとき */
   mode:"new", editBatch:null, editYm:null, editAt:"", editB:null, orig:null,
@@ -1173,6 +1175,18 @@ function renderOff(){
   document.getElementById("fOff").className="big"+(S.off.length?"":" off");
   document.getElementById("cOff").classList.toggle("on",S.off.length>0);
 }
+/* 休みの候補もメンバーと同じ3グループで出す（応援は「常駐協力」に入れる） */
+function inOffGroup(n,g){
+  const gg=groupOfName(n);
+  return gg===g || (g==="常駐協力" && gg==="応援");
+}
+function offNamesForGroup(g){
+  if(g==="自社") return selfNames().sort(byLen);
+  const all=groupNames(g);
+  const guests=(g==="常駐協力") ? S.guests : [];
+  return [...new Set(all.concat(guests))].sort(byLen);
+}
+function offCountIn(g){ return S.off.filter(o=>inOffGroup(o.name,g)).length; }
 function renderOffSheet(){
   document.getElementById("offSelected").innerHTML=S.off.map(o=>
     '<div class="offitem"><div class="hd"><span class="nm">'+esc(o.name)+'</span>'+
@@ -1186,10 +1200,42 @@ function renderOffSheet(){
     b.onclick=()=>{ S.off=S.off.map(o=>o.name===b.dataset.n?{name:o.name,reason:b.dataset.r}:o);
       renderOffSheet(); renderAll(); };
   });
-  document.getElementById("offCandidates").innerHTML=selfNames().sort(byLen).map(n=>{
-    const on=S.off.some(o=>o.name===n);
-    return '<button class="nchip'+(on?" on":"")+'" data-n="'+esc(n)+'">'+esc(n)+'</button>';
+  /* 3つの開閉ボタン（⑤メンバーと同じ見た目・同じ操作） */
+  document.getElementById("offMGroups").innerHTML=MGROUPS.map(g=>{
+    const c=offCountIn(g), n=offNamesForGroup(g).length;
+    return '<button class="mgtab'+(S.offMgOpen[g]?" open":"")+'" data-g="'+esc(g)+'">'+
+      '<span class="g">'+esc(g)+'</span>'+
+      '<span class="c'+(c?" has":"")+'">'+(c?c+"人休み":(n?n+"人":"名簿なし"))+'</span></button>';
   }).join("");
+  document.querySelectorAll("#offMGroups .mgtab").forEach(b=>{
+    b.onclick=()=>{ const g=b.dataset.g; S.offMgOpen[g]=!S.offMgOpen[g]; renderOffSheet(); };
+  });
+
+  /* 開いているグループだけ名前を出す */
+  let html="";
+  MGROUPS.forEach(g=>{
+    const names=offNamesForGroup(g);
+    const picked=S.off.filter(o=>inOffGroup(o.name,g)).map(o=>o.name);
+    if(!S.offMgOpen[g]){
+      /* 閉じていても、休みの人は名前で分かるようにする */
+      if(picked.length) html+='<div class="mgpick">'+esc(g)+'：'+picked.map(esc).join("・")+'</div>';
+      return;
+    }
+    html+='<div class="mgsec"><div class="lbl2">'+esc(g)+'</div>';
+    if(!names.length){
+      html+='<div class="note" style="margin-top:0">'+
+        (g==="外注協力"
+          ? "外注協力の名簿はまだ登録されていません。名簿が届いたら事務所が登録します。"
+          : "この区分に出す名前がありません。")+'</div>';
+    } else {
+      html+='<div class="ngrid">'+names.map(n=>{
+        const on=S.off.some(o=>o.name===n);
+        return '<button class="nchip'+(on?" on":"")+'" data-n="'+esc(n)+'">'+esc(n)+'</button>';
+      }).join("")+'</div>';
+    }
+    html+='</div>';
+  });
+  document.getElementById("offCandidates").innerHTML=html;
   document.querySelectorAll("#offCandidates .nchip").forEach(b=>{
     b.onclick=()=>{ const n=b.dataset.n;
       if(S.off.some(o=>o.name===n)) S.off=S.off.filter(o=>o.name!==n);
