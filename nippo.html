@@ -517,6 +517,8 @@
 <div class="sheet" id="shPad">
   <h2 id="padTitle"></h2>
   <div class="chips" id="padKinds" style="margin-bottom:10px"></div>
+  <button class="btn d sm" id="padMoreBtn" style="display:none;margin-bottom:10px" onclick="togglePadMore()"></button>
+  <div class="chips" id="padMoreKinds" style="display:none;margin-bottom:10px"></div>
   <div class="padv" id="padVal">0</div>
   <div class="chips" id="padQuick"></div>
   <div class="pad" id="padKeys"></div>
@@ -590,7 +592,7 @@ let S = {
   date: todayStr(), foreman:null, job:null, jobFree:null, kubun:"現場",
   sel:[], off:[], guests:[], all:{}, ovr:{}, more:false, foremanAuto:false,
   checks:{出張:false,夜勤:false}, late:{}, early:{},
-  jobTab:"fixed", jobOwner:"", pad:"0", padTarget:null, calY:0, calM:0, closeTarget:null,
+  jobTab:"fixed", jobOwner:"", pad:"0", padTarget:null, padMore:false, calY:0, calM:0, closeTarget:null,
   mgOpen:{"自社":true,"常駐協力":false,"外注協力":false},
   offMgOpen:{"自社":true,"常駐協力":false,"外注協力":false},
   allow:0, allowE:false,
@@ -1319,23 +1321,48 @@ function openPad(who,kind){
   else if(kind==="早退") cur=earlyFor(who);
   else cur=hoursFor(who)[kind]||0;
   S.pad=cur?cur.toFixed(1):"0";
-  const isT=(who!=="allow");
   document.getElementById("padTitle").textContent=
     who==="allow" ? "職長手当（工数）"
     : (who==="all"?"全員分":who)+" ─ "+kind+(isMinus?"（引く時間）":"");
-  document.getElementById("padKinds").style.display=isT?"flex":"none";
-  if(isT){
-    /* 個別のときだけ「遅刻」「早退」も並べる */
-    const kinds=MORE_KINDS.indexOf(kind)>=0 ? MORE_KINDS
-              : (isPerson ? MAIN_KINDS.concat(MINUS_KINDS) : MAIN_KINDS);
-    document.getElementById("padKinds").innerHTML=kinds.map(k=>
-      '<button class="chip sm'+(k===kind?" on":"")+(MINUS_KINDS.indexOf(k)>=0?" mn":"")+
-      '" data-k="'+esc(k)+'">'+esc(k)+'</button>').join("");
-    document.querySelectorAll("#padKinds .chip").forEach(b=>b.onclick=()=>openPad(who,b.dataset.k));
-  }
+  /* 個別は、その他の時間を開いていた種類なら最初から開いておく */
+  if(isPerson && MORE_KINDS.indexOf(kind)>=0) S.padMore=true;
+  renderPadKinds();
   document.getElementById("padReset").style.display=(isPerson&&hasOwn(who))?"block":"none";
   renderPad(); openSheet("pad");
 }
+/* テンキーの「時間の種類」ボタン。
+   個別は 全員分と同じ11種類＋遅刻・早退。よく使う4つを先に出して、
+   残りは「その他の時間」で開く。遅刻・早退は色を分けて、いつも見える位置に置く。 */
+function renderPadKinds(){
+  const t=S.padTarget; if(!t) return;
+  const who=t.who, kind=t.kind;
+  const box=document.getElementById("padKinds");
+  const moreBtn=document.getElementById("padMoreBtn");
+  const moreBox=document.getElementById("padMoreKinds");
+  moreBtn.style.display="none"; moreBox.style.display="none"; moreBox.innerHTML="";
+  if(who==="allow"){ box.style.display="none"; return; }
+  box.style.display="flex";
+  if(who==="all"){
+    /* 全員分は今までどおり。その他の時間は前の画面で開け閉めする */
+    padChips(box, MORE_KINDS.indexOf(kind)>=0?MORE_KINDS:MAIN_KINDS, who, kind);
+    return;
+  }
+  padChips(box, MAIN_KINDS.concat(MINUS_KINDS), who, kind);
+  const h=hoursFor(who), set=MORE_KINDS.filter(k=>h[k]);
+  moreBtn.style.display="block";
+  moreBtn.textContent = S.padMore ? "− その他の時間を閉じる"
+    : (set.length ? "＋ その他の時間（"+set.map(k=>k+" "+f1(h[k])).join("／")+"）"
+                  : "＋ その他の時間（休日・移動・早出・深夜・突発）");
+  if(S.padMore){ moreBox.style.display="flex"; padChips(moreBox, MORE_KINDS, who, kind); }
+}
+function padChips(box,kinds,who,kind){
+  box.innerHTML=kinds.map(k=>
+    '<button class="chip sm'+(k===kind?" on":"")+(MINUS_KINDS.indexOf(k)>=0?" mn":"")+
+    '" data-k="'+esc(k)+'">'+esc(k)+'</button>').join("");
+  box.querySelectorAll(".chip").forEach(b=>b.onclick=()=>openPad(who,b.dataset.k));
+}
+/* 入力中の数字は消さずに、その他の時間だけ開け閉めする */
+function togglePadMore(){ S.padMore=!S.padMore; renderPadKinds(); }
 function renderPad(){
   document.getElementById("padVal").textContent=S.pad;
   document.getElementById("padQuick").innerHTML=["0.5","1.0","1.5","2.0","8.0"].map(v=>
