@@ -176,6 +176,13 @@
   .mini.on{background:var(--tint);border-color:var(--green);color:var(--green);}
   .mini.tr{width:38px;padding:0;font-size:17px;color:var(--muted);}
   .used{font-size:12.5px;color:var(--faint);}
+  /* 一緒に行った人。確認アプリと同じ文言・同じ見せ方。表の行が窮屈にならないよう
+     工事件名の下に小さめに出す */
+  .mates{margin-top:5px;font-size:12.5px;color:var(--muted);line-height:1.6;}
+  .mates b{font-weight:600;color:var(--ink);}
+  /* 職長として出した日報の合計行 */
+  #oneLead tr.tot td{font-weight:700;color:var(--green);
+    border-top:1px solid var(--line-s);background:var(--tint);}
   /* しぼり込みボタン。行の最後が欠けないよう、余りは横に伸ばして埋める */
   .fillrow{display:flex;flex-wrap:wrap;gap:8px;}
   #regTabs button,#regOwners button{min-height:42px;padding:10px 12px;background:transparent;
@@ -304,6 +311,7 @@
     <div class="pane" id="pPerson">
       <div id="pList">
         <div class="lead"><b id="pLeadMonth"></b>　紙の日報と同じ列順です。1日＝8時間で人工（にんく）に換算しています。</div>
+        <input type="text" id="pSearch" placeholder="氏名で絞る" style="margin-bottom:12px">
         <div class="wrapT"><table id="pTable" class="paper"></table></div>
         <div class="note">合計時間は、遅刻・早退を引いた後の時間です。<b>職長手当は工数</b>で数えます（本人を含み、役員7名・休みの人・実働がない人は数えません。1人あたり実働4時間以下は0.5、それより上は1.0）。移動や残業だけの日は数えないので、必要なときは職長がスマホで手入力します。職長が直した送信は、その値を使います。</div>
       </div>
@@ -319,6 +327,7 @@
         <div class="sec-lbl">日ごとの明細</div>
         <div class="wrapT"><table id="oneRows"></table></div>
         <div id="oneOffWrap"></div>
+        <div id="oneLeadWrap"></div>
       </div>
     </div>
 
@@ -504,6 +513,21 @@ function batchAllow(batchRows){
   return autoAllow(batchRows);
 }
 function batchKey(r){ return r.batch || (r.d+"|"+(r.no||r.j||"")); }
+/* 「一緒に行った人」を出すためのまとまり。
+   batch が付いていない古い行は 日付＋工事＋職長 でまとめる（確認アプリと同じ）。
+   職長手当の batchKey とは別にしてある。手当の数え方は今までどおり変えない */
+function mateKey(r){ return r.batch || (r.d+"|"+(r.no||r.j||"")+"|"+(r.f||"")); }
+/* その送信で同じ現場にいた他の人。休みの人は入れない（確認アプリと同じ） */
+function matesOf(r, rows){
+  const k = mateKey(r);
+  const out = [];
+  rows.forEach(x=>{
+    if(x===r || x.off || !x.n || x.n===r.n) return;
+    if(mateKey(x)!==k) return;
+    if(out.indexOf(x.n)<0) out.push(x.n);
+  });
+  return out;
+}
 function allowTx(v){ return v ? (Math.round(v*10)/10).toFixed(1) : "―"; }
 
 /* ---- 工期の警告 ---- */
@@ -755,6 +779,7 @@ function renderDetail(){
   bindActs("#dOff","ed2b");
 }
 document.getElementById("dSearch").addEventListener("input", renderDetail);
+document.getElementById("pSearch").addEventListener("input", renderPerson);
 function card(v,l){ return '<div class="c"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
 
 /* ---- 区分のしぼり込み（画面ごとのコントロール） ---- */
@@ -803,8 +828,13 @@ function aggPeople(kubunFilter){
     const sent = rows.filter(r=>r.f===n);
     const bt = {};
     sent.forEach(r=>{ (bt[batchKey(r)] = bt[batchKey(r)]||[]).push(r); });
+    /* 手当の内訳。ここで足したものが、そのまま下の allow になる（数え方は今までどおり） */
+    const leadB = Object.keys(bt).map(k=>{
+      const g = bt[k];
+      return { rows:g, allow:batchAllow(g), edited:g.some(x=>x.faE) };
+    }).sort((a,b)=>String(a.rows[0].d).localeCompare(String(b.rows[0].d)));
     let allow = 0;
-    Object.keys(bt).forEach(k=>{ allow += batchAllow(bt[k]); });
+    leadB.forEach(b=>{ allow += b.allow; });
     const kinds = {};
     PAPER_KINDS.forEach(k=>{ kinds[k] = mine.reduce((a,r)=>a+((r.h&&r.h[k])||0),0); });
     const offMap = {};
@@ -821,7 +851,7 @@ function aggPeople(kubunFilter){
       nightD:new Set(mine.filter(r=>r.y).map(r=>r.d)).size,
       total:mine.reduce((a,r)=>a+netOf(r),0),
       kinds:kinds, offMap:offMap, offN:myOff.length,
-      allow:allow, rows:mine, offRows:myOff
+      allow:allow, rows:mine, offRows:myOff, leadB:leadB
     };
   });
 }
@@ -848,10 +878,16 @@ function renderPerson(){
 
   const lm=document.getElementById("pLeadMonth");
   if(lm) lm.textContent = curMonth ? ymJP(curMonth)+"分" : "";
-  const agg = aggPeople(pKubun);
+  const all = aggPeople(pKubun);
+  /* 氏名でしぼり込む。明細一覧の検索窓と同じで、入れた字が含まれる人だけ出す */
+  const q = (document.getElementById("pSearch").value||"").trim();
+  const agg = q ? all.filter(p=>p.n.indexOf(q)>=0) : all;
   if(!agg.length){
     document.getElementById("pTable").innerHTML =
-      '<tbody><tr><td class="empty">'+(pKubun?"この区分の記録はありません":"この月の記録はありません")+'</td></tr></tbody>';
+      '<tbody><tr><td class="empty">'+
+      (q ? "「"+esc(q)+"」に当てはまる人はいません"
+         : (pKubun?"この区分の記録はありません":"この月の記録はありません"))+
+      '</td></tr></tbody>';
     return;
   }
   const head = '<thead><tr><th class="nm">氏名</th>' +
@@ -904,7 +940,10 @@ function renderPerson(){
   const allOff = mergeOff(agg);
   const allNinku = agg.reduce((a,p)=>a+WORK_KINDS.reduce((x,k)=>x+(p.kinds[k]||0),0),0)/8;
   const allAllow = agg.reduce((a,p)=>a+p.allow,0);
-  const foot = '<tr class="tot"><td>全員計</td>'+tCells+
+  /* しぼり込み中は、表に出ている人だけの合計であることが分かる名前にする
+     （数字と見出しが食い違わないように） */
+  const totLabel = q ? "絞り込み計（"+agg.length+"人）" : "全員計";
+  const foot = '<tr class="tot"><td>'+esc(totLabel)+'</td>'+tCells+
     '<td class="k">'+f1(agg.reduce((a,p)=>a+p.total,0))+'</td>'+
     '<td class="k">'+allNinku.toFixed(2)+'</td>'+
     '<td class="k">'+agg.reduce((a,p)=>a+p.days,0)+'日</td>'+
@@ -959,6 +998,8 @@ function renderOne(){
     || '<div class="note">時間の記録がありません</div>';
 
   const rows = p.rows.slice().sort((a,b)=>String(a.d).localeCompare(String(b.d)));
+  /* 一緒に行った人は、区分でしぼり込んでいても全員から拾う（同じ送信の人が消えないように） */
+  const monthRows = rowsOf(curMonth);
   document.getElementById("oneRows").innerHTML = rows.length ? (
     '<thead><tr><th>日付</th><th>注番</th><th>工事件名</th><th>区分</th><th>職長</th>'+
     '<th>時間の内訳</th><th class="num">合計</th><th></th></tr></thead><tbody>'+
@@ -967,9 +1008,11 @@ function renderOne(){
       const tags = [];
       if(r.s) tags.push('<span class="tg">出張</span>');
       if(r.y) tags.push('<span class="tg">夜勤</span>');
+      const mt = matesOf(r, monthRows);
       return '<tr><td>'+dStr(r.d)+'</td>'+
         '<td><span class="no'+(r.no?"":" free")+'">'+esc(r.no||"―")+'</span></td>'+
-        '<td>'+esc(r.j||"")+'</td>'+
+        '<td>'+esc(r.j||"")+
+          (mt.length?'<div class="mates">一緒に行った人：<b>'+mt.map(esc).join("、")+'</b></div>':"")+'</td>'+
         '<td>'+(r.kubun?'<span class="kb">'+esc(r.kubun)+'</span>':"")+'</td>'+
         '<td>'+esc(r.f||"")+'</td>'+
         '<td><div class="brk">'+brkHtml(r)+'</div>'+
@@ -992,6 +1035,33 @@ function renderOne(){
   ) : "";
 
   bindActs("#oneOff","ed3b");
+
+  /* 職長として出した日報。上に出している「職長手当（工数）」の内訳。
+     1件＝1回の送信で、まとめ方も数え方も手当の計算と同じものを使う。
+     職長として送った日報が1件もない人には、この欄ごと出さない */
+  const lb = p.leadB || [];
+  document.getElementById("oneLeadWrap").innerHTML = lb.length ? (
+    '<div class="sec-lbl">職長として出した日報（職長手当の内訳）</div>'+
+    '<div class="wrapT"><table id="oneLead">'+
+    '<thead><tr><th>日付</th><th>注番</th><th>工事件名</th>'+
+    '<th class="num">人数</th><th class="num">工数</th></tr></thead><tbody>'+
+    lb.map(b=>{
+      const r = b.rows[0];
+      const work = b.rows.filter(x=>!x.off), offs = b.rows.filter(x=>x.off);
+      return '<tr><td>'+dStr(r.d)+'</td>'+
+        '<td><span class="no'+(r.no?"":" free")+'">'+esc(r.no||"―")+'</span></td>'+
+        '<td>'+esc(r.j||"")+
+          (b.edited?'<div class="used">手で直した分</div>':"")+'</td>'+
+        '<td class="num">'+work.length+'人'+
+          (offs.length?'<div class="used">休み '+offs.length+'人</div>':"")+'</td>'+
+        '<td class="num big">'+(b.allow?allowTx(b.allow):'<span class="zz">対象外</span>')+'</td></tr>';
+    }).join("")+
+    '<tr class="tot"><td colspan="4">合計（'+lb.length+'件）</td>'+
+    '<td class="num">'+allowTx(p.allow)+'</td></tr></tbody></table></div>'+
+    '<div class="note">上の「職長手当（工数）」は、この一覧の合計です。1件が1回の送信にあたります。'+
+    '本人を含めて数え、役員7名・休みの人・実働がない人は数えません（実働4時間以下は0.5、それより上は1.0）。'+
+    '職長がスマホで手を入れた送信や、事務所で直した送信は、その値をそのまま使います。</div>'
+  ) : "";
 }
 
 /* ---- 工事別工数 ---- */
