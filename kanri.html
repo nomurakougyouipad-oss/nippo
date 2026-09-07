@@ -1277,6 +1277,24 @@ document.getElementById("regSearch").addEventListener("input", renderReg);
 /* ---- 注番なしで届いている日報 ----
    同じ件名で送られたものは1行にまとめる（職長が同じ件名を選んで何回か送るため）。
    注番を付けたら、注番マスタへの登録と同時に、その件名の日報ぜんぶの注番を書き換える。 */
+/* 履歴に残す名前。日報管理は入口で聞いているが、注番管理は聞いていない。
+   注番管理は3人が同じ画面を使うので、日報を直すたびに聞いて確かめる */
+function needAskWho(){ return MODE==="reg"; }
+function lastWho(){
+  if(WHO) return WHO;
+  try{ return localStorage.getItem("nippoWho") || ""; }catch(e){ return ""; }
+}
+function rememberWho(w){
+  WHO = w;
+  try{ localStorage.setItem("nippoWho", w); }catch(e){}
+  const t = document.getElementById("whoTx");
+  if(t) t.textContent = w;
+  else if(MODE==="reg"){
+    const l = document.getElementById("whoLine");
+    if(l) l.textContent = "よつば建設工業 ／ 注番管理　" + w;
+  }
+}
+
 function freeDoneName(x){ return (x && typeof x==="object") ? (x.j||"") : String(x||""); }
 function isFreeDone(j){ return FREEDONE.some(x=>freeDoneName(x)===j); }
 
@@ -1392,7 +1410,14 @@ function markFreeDone(i){
   if(!confirm("「"+(g.j||"（件名なし）")+"」を、注番なしで確定にします。\n\n"+
               "日報は消えません。注番なしのリストから外すだけです。\n"+
               "あとから「戻す」で元に戻せます。")) return;
-  db.ref("master/freeDone").set(FREEDONE.concat([{j:g.j, at:stampNow(), who:(WHO||"注番管理")}]))
+  /* 誰が外したかを残す。注番管理は入口で名前を聞いていないので、ここで聞く */
+  let by = WHO;
+  if(needAskWho()){
+    by = (prompt("あなたの名前を入れてください（誰が外したかを残します）", lastWho()) || "").trim();
+    if(!by) return;
+    rememberWho(by);
+  }
+  db.ref("master/freeDone").set(FREEDONE.concat([{j:g.j, at:stampNow(), who:by}]))
     .catch(e=>alert("外せませんでした: "+e.message));
 }
 /* ---- 注番なしの日報を直す（注番を付ける／件名を直す） ---- */
@@ -1409,6 +1434,14 @@ function openFreeFix(i){
   document.getElementById("mfName").value = g.j || "";
   document.getElementById("mfMode").value = "none";
   ["mfNo","mfOwner","mfStart","mfEnd","mfWhy"].forEach(id=>document.getElementById(id).value="");
+  /* 日報管理は入口で名前を聞いているので、そのまま使う。
+     注番管理は聞いていないうえ、3人が同じ画面を使う。前に入れた名前をそのまま使うと
+     別の人の操作がその名前で残ってしまうので、毎回この欄を出して確かめてもらう */
+  document.getElementById("mfByWrap").style.display = needAskWho() ? "grid" : "none";
+  document.getElementById("mfBy").value = lastWho();
+  document.getElementById("mfByNote").textContent = needAskWho()
+    ? "誰が付けたかを追えるように、修正履歴に残します。前に入れた名前を出しています。別の人が使うときは直してください。"
+    : "修正履歴には「"+WHO+"」として残ります。";
 
   /* すでにある注番から選ぶ用。
      閉じた注番も出す。注番が出たあとで閉じてから、注番なしの日報に気づくことがあるため
@@ -1443,7 +1476,9 @@ function syncFreeFix(){
   const plan = document.getElementById("mfPlan");
   let err = "", tx = "";
 
+  const by = (document.getElementById("mfBy").value||"").trim();
   if(!name) err = "工事件名を入れてください。";
+  else if(needAskWho() && !by) err = "あなたの名前を入れてください（修正履歴に残します）。";
   else if(mode==="pick" && !pick) err = "注番を選んでください。";
   else if(mode==="new"){
     if(!no) err = "注番を入れてください。";
@@ -1475,7 +1510,7 @@ let mfWired = false;
 function wireFreeFix(){
   if(mfWired) return;
   mfWired = true;
-  ["mfName","mfNo","mfOwner"].forEach(id=>
+  ["mfName","mfNo","mfOwner","mfBy"].forEach(id=>
     document.getElementById(id).addEventListener("input", syncFreeFix));
   document.getElementById("mfMode").addEventListener("change", syncFreeFix);
   document.getElementById("mfPick").addEventListener("change", ()=>{
@@ -1493,6 +1528,8 @@ function wireFreeFix(){
 
 function doFreeFix(){
   const g = regFreeGroups[mfIdx]; if(!g) return;
+  const by = (document.getElementById("mfBy").value||"").trim();
+  if(needAskWho() && !by) return;
   const mode = document.getElementById("mfMode").value;
   const name = (document.getElementById("mfName").value||"").trim();
   const pick = (document.getElementById("mfPick").value||"").trim();
@@ -1544,8 +1581,9 @@ function doFreeFix(){
     (mode==="pick" ? "／登録済みの注番から選択" : "");
 
   document.getElementById("mfGo").disabled = true;
+  if(needAskWho()) rememberWho(by);
   db.ref().update(payload)
-    .then(()=>pushLog(what, why, WHO||"注番管理"))
+    .then(()=>pushLog(what, why, WHO))
     .then(()=>{ closeFreeFix(); render(); })
     .catch(e=>{ alert("直せませんでした: "+e.message); syncFreeFix(); });
 }
@@ -2342,6 +2380,11 @@ document.getElementById("xlDem").addEventListener("click", ()=>{
   </div>
 
   <div id="mfWarn"></div>
+
+  <div class="ehd">直す人</div>
+  <div class="ek wide" id="mfByWrap"><label>あなたの名前</label>
+    <input type="text" id="mfBy" class="tx" placeholder="例：本山" maxlength="20"></div>
+  <div class="note" id="mfByNote" style="margin-top:2px"></div>
 
   <label class="fl" style="margin-top:16px">直す理由（履歴に残ります）</label>
   <input type="text" id="mfWhy" placeholder="注番が出た／件名の打ち間違い　など"
