@@ -325,6 +325,7 @@
     <div class="pane" id="pPerson">
       <div id="pList">
         <div class="lead"><b id="pLeadMonth"></b>　紙の日報と同じ列順です。1日＝8時間で人工（にんく）に換算しています。</div>
+        <div id="pMsg"></div>
         <input type="text" id="pSearch" placeholder="氏名で絞る" style="margin-bottom:12px">
         <div class="wrapT"><table id="pTable" class="paper"></table></div>
         <div class="note">合計時間は、遅刻・早退を引いた後の時間です。<b>職長手当は工数</b>で数えます（本人を含み、役員7名・休みの人・実働がない人は数えません。1人あたり実働4時間以下は0.5、それより上は1.0）。移動や残業だけの日は数えないので、必要なときは職長がスマホで手入力します。職長が直した送信は、その値を使います。</div>
@@ -463,6 +464,8 @@ const ALLOW_BORDER = 4;          /* 実働がこの時間以下なら 0.5 */
 
 let ALLDATA = {}, WORKERS = [], JOBS = [];
 let tab = "detail", curMonth = null, curJob = null, curOne = null;
+/* 月を変えたら、その人の記録がその月に無かった…というときに出す名前 */
+let pMissed = null;
 let CLOSED = [], regTab = "all", regEditNo = null, regFixed = false, mTarget = null;
 let LOG = [], WHO = "", eTarget = null, dTarget = null;
 /* 注番なしで届いている日報。FREEDONE＝「注番なしで確定」としてリストから外した件名 */
@@ -676,7 +679,12 @@ function boot(){
   renderNav();
 }
 document.getElementById("monthSel").addEventListener("change", e=>{
-  curMonth = e.target.value; curJob = null; curOne = null; updateTitleMonth(); render();
+  curMonth = e.target.value; curJob = null;
+  /* 個人別の詳細を見ている最中は、その人のまま選んだ月に切り替える。
+     ほかの画面（明細一覧・工事別工数など）は今までどおり */
+  if(tab !== "person") curOne = null;
+  pMissed = null;
+  updateTitleMonth(); render();
 });
 
 function renderNav(){
@@ -898,6 +906,12 @@ function renderPerson(){
 
   const lm=document.getElementById("pLeadMonth");
   if(lm) lm.textContent = curMonth ? ymJP(curMonth)+"分" : "";
+  const msg=document.getElementById("pMsg");
+  if(msg) msg.innerHTML = pMissed
+    ? '<div class="warnbox" style="margin-bottom:12px">'+esc(pMissed)+'さんは'+
+      esc(curMonth?ymJP(curMonth):"")+'の記録がありません。'+
+      (pKubun?'（区分「'+esc(pKubun)+'」でしぼり込んでいます）':'')+'</div>'
+    : "";
   const all = aggPeople(pKubun);
   /* 氏名でしぼり込む。明細一覧の検索窓と同じで、入れた字が含まれる人だけ出す */
   const q = (document.getElementById("pSearch").value||"").trim();
@@ -972,7 +986,7 @@ function renderPerson(){
 
   document.getElementById("pTable").innerHTML = head+'<tbody>'+body+foot+'</tbody>';
   document.querySelectorAll("#pTable .lnk").forEach(b=>{
-    b.onclick = ()=>{ curOne = b.dataset.n; renderPerson(); window.scrollTo(0,0); };
+    b.onclick = ()=>{ curOne = b.dataset.n; pMissed = null; renderPerson(); window.scrollTo(0,0); };
   });
 }
 
@@ -982,7 +996,10 @@ function renderOne(){
   document.getElementById("pList").style.display = "none";
   document.getElementById("pOne").style.display = "block";
   const p = aggPeople(pKubun).find(x=>x.n===curOne);
-  if(!p){ closeOne(); return; }
+  /* 月を変えて、その月にその人の記録が無いとき。黙って一覧に戻ると分かりにくいので、
+     誰の記録が無かったのかを一覧の上に出す */
+  if(!p){ pMissed = curOne; closeOne(); return; }
+  pMissed = null;
 
   document.getElementById("oneName").textContent = p.n;
   document.getElementById("oneMonth").textContent = (curMonth||"").replace("-","年")+"月";
