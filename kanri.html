@@ -865,8 +865,18 @@ function aggPeople(kubunFilter){
     leadB.forEach(b=>{ allow += b.allow; });
     const kinds = {};
     PAPER_KINDS.forEach(k=>{ kinds[k] = mine.reduce((a,r)=>a+((r.h&&r.h[k])||0),0); });
-    const offMap = {};
-    myOff.forEach(o=>{ const rs=o.offReason||"休み"; offMap[rs]=(offMap[rs]||0)+1; });
+    /* 休みは「回数」ではなく「日数」で数える。
+       日報は工事1件につき1枚なので、同じ人が同じ日に何枚も出ていることがある。
+       キーは「日付＋種別」。同じ日の同じ種別は、何枚あっても1日。
+       休み・振休などの種別は、分けたまま持っておく（合算しない） */
+    const offMap = {}, offSeen = {};
+    myOff.forEach(o=>{
+      const rs  = o.offReason||"休み";
+      const key = (o.d||"")+"|"+rs;
+      if(offSeen[key]) return;
+      offSeen[key] = 1;
+      offMap[rs] = (offMap[rs]||0)+1;
+    });
     const w = workerOf(n);
     const src = (mine[0]||myOff[0]||{});
     return {
@@ -1004,13 +1014,20 @@ function renderOne(){
   document.getElementById("oneName").textContent = p.n;
   document.getElementById("oneMonth").textContent = (curMonth||"").replace("-","年")+"月";
 
-  /* 大きく出すのは「出勤日数」と「残業」だけ。総合計（全部を足した時間）は出さない。
+  /* 大きく出すのは日数と残業まで。総合計（全部を足した時間）は出さない。
      人工と職長手当は給与計算に要るので、小さめに並べて残す。 */
   const g = arr => arr.reduce((a,k)=>a+(p.kinds[k]||0),0);
+  /* 休み・振休は日数（同じ日に日報が何枚あっても1日）。0のときは職長手当と同じ「―」 */
+  const offFig = rs => ({l:rs, v:(p.offMap[rs] ? p.offMap[rs]+"日" : "―"), big:true});
   const figs = [
     {l:"出勤日数", v:p.days+"日", big:true},
-    {l:"残業", v:f1(g(OT2_KINDS)), big:true},
+    offFig("休み"),
+    offFig("振休"),
   ];
+  /* 有給・欠勤・特休は、その月にある人だけ出す */
+  OFF_REASONS.filter(rs=>rs!=="休み" && rs!=="振休" && p.offMap[rs])
+    .forEach(rs=>figs.push(offFig(rs)));
+  figs.push({l:"残業", v:f1(g(OT2_KINDS)), big:true});
   /* 出張・夜勤は1日1回。0回のときは出さない */
   if(p.tripD)  figs.push({l:"出張", v:p.tripD+"回", big:true});
   if(p.nightD) figs.push({l:"夜勤", v:p.nightD+"回", big:true});
