@@ -1,0 +1,14 @@
+{
+  "id": "yotsuba-kakunin",
+  "name": "日報を見る｜よつば建設工業",
+  "short_name": "日報確認",
+  "start_url": "kakunin.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1c4b34",
+  "icons": [
+    { "src": "icons/kakunin-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/kakunin-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
