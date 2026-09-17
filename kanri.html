@@ -248,6 +248,20 @@
   .mini.del:hover{background:var(--mag-bg);}
   .warnbox{background:var(--mag-bg);border-left:3px solid var(--mag);border-radius:2px;
     padding:12px 14px;font-size:13.5px;color:var(--mag-d);line-height:1.6;margin-top:12px;}
+
+  /* --- 朝のチェック（明細一覧の一番上に出す帯） --- */
+  .chk{background:var(--mag-bg);border-left:3px solid var(--mag);border-radius:2px;
+    padding:14px 16px;margin-bottom:18px;}
+  .chk .hd{font-size:15px;font-weight:700;color:var(--mag-d);margin-bottom:10px;}
+  .chk .sec{display:flex;align-items:flex-start;gap:14px;padding:10px 0;
+    border-top:1px solid rgba(214,0,108,.18);}
+  .chk .sec.first{border-top:none;padding-top:0;}
+  .chk .bd{flex:1;min-width:0;}
+  .chk .t{font-size:13px;font-weight:600;color:var(--mag-d);margin-bottom:2px;}
+  .chk .nm{font-size:17px;font-weight:700;color:var(--mag-d);line-height:1.7;}
+  .chk .nm span{margin-right:18px;white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .chk .mini{flex:none;color:var(--mag-d);border-color:rgba(214,0,108,.4);}
+  .chk .mini:hover{background:#f7d3e4;}
   .bg.am{background:var(--amber-bg);color:var(--amber);}
   tr.amber td{background:var(--amber-bg);}
   tr.amber td .no{color:var(--amber);}
@@ -313,6 +327,7 @@
     </div>
 
     <div class="pane on" id="pDetail">
+      <div id="dCheck"></div>
       <div class="cards" id="dCards"></div>
       <input type="text" id="dSearch" placeholder="名前・注番・件名で絞る" style="margin-bottom:12px">
       <div class="wrapT"><table id="dTable"></table></div>
@@ -756,7 +771,104 @@ function bindActs(sel, which){
   });
 }
 
+/* ---- 朝のチェック（明細一覧の一番上） --------------------------------
+   前日ぶんの日報を見て、気になる人だけを出します。
+     ・日報が届いていない人
+     ・平日区分の合計が8時間を超えている人（残業に入れ忘れた疑い）
+   読むだけの機能です。日報も名簿も、いっさい書き換えません。
+   「消す」はこのブラウザに覚えるだけ（localStorage）で、
+   ほかの人の画面や Realtime Database には何も残りません。
+   ---------------------------------------------------------------------- */
+const CHK_KEY   = "nippoChk";   /* 消した日と見出しを覚えておく場所 */
+const CHK_LIMIT = 8;            /* 平日区分がこの時間を超えたら出す */
+
+/* 見る日＝前日。日曜のぶんは見ません（月曜の朝に開いても出しません） */
+function checkDay(){
+  const t = new Date(todayStr()+"T00:00:00");
+  if(isNaN(t)) return null;
+  t.setDate(t.getDate()-1);
+  if(t.getDay()===0) return null;
+  return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+
+         "-"+String(t.getDate()).padStart(2,"0");
+}
+/* その日に「消す」を押した見出しの一覧。覚えておくのは1日ぶんだけなので、
+   日が変わればひとりでに消えます */
+function chkDone(d){
+  try{
+    const v = JSON.parse(localStorage.getItem(CHK_KEY)||"null");
+    return (v && v.d===d && Array.isArray(v.x)) ? v.x : [];
+  }catch(e){ return []; }
+}
+function chkHide(d, part){
+  const x = chkDone(d);
+  if(x.indexOf(part)<0) x.push(part);
+  try{ localStorage.setItem(CHK_KEY, JSON.stringify({d:d, x:x})); }catch(e){}
+  renderCheck();
+}
+/* 「平日」とつく区分の合計。遅刻・早退は引きません。
+   引いてしまうと「残業を平日に入れた」という間違いが隠れてしまうためです */
+function weekdayOf(r){
+  const h = r.h || {};
+  let a = 0;
+  Object.keys(h).forEach(k=>{ if(k.indexOf("平日")>=0) a += (h[k]||0); });
+  return a;
+}
+function checkOf(d){
+  const rows = rowsOf(ymOf(d)).filter(r=>r.d===d);
+  const work = rows.filter(r=>!r.off);
+  /* 出勤の日報がまだ1枚も届いていない日は出しません。
+     休日や、朝まだ誰も送っていない時間に、全員が赤くなるのを防ぐためです */
+  if(!work.length) return null;
+
+  /* 届いている人＝その日の日報に名前がある人。
+     日報は1人1行なので、職長も「一緒に行った人」も同じように見つかります。
+     休みの記録がある人も、ここで外れます（休みの行にも名前が入っています） */
+  const got = {};
+  rows.forEach(r=>{ if(r.n) got[r.n] = 1; });
+  const miss = WORKERS.filter(w=>w.active!==false && w.name && !got[w.name])
+    .map(w=>w.name).sort(byLen);
+
+  /* 平日が8時間を超えている人。日報1枚ごとではなく、
+     その人のその日ぶんを全部足してから見ます（4.0＋4.0＋2.0＝10.0） */
+  const sum = {};
+  work.forEach(r=>{ if(r.n) sum[r.n] = (sum[r.n]||0) + weekdayOf(r); });
+  const over = Object.keys(sum).filter(n=>r1(sum[n]) > CHK_LIMIT)
+    .sort(byLen).map(n=>({n:n, v:sum[n]}));
+
+  return (miss.length || over.length) ? {miss:miss, over:over} : null;
+}
+function renderCheck(){
+  const el = document.getElementById("dCheck");
+  if(!el) return;
+  const d = checkDay();
+  const c = d ? checkOf(d) : null;
+  if(!c){ el.innerHTML = ""; return; }
+
+  const done = chkDone(d);
+  const secs = [];
+  if(c.miss.length && done.indexOf("miss")<0)
+    secs.push({k:"miss", t:"日報が届いていない人（"+c.miss.length+"名）",
+      nm:c.miss.map(n=>esc(n))});
+  if(c.over.length && done.indexOf("over")<0)
+    secs.push({k:"over", t:"平日が8時間を超えている人（"+c.over.length+"名）",
+      nm:c.over.map(o=>esc(o.n)+" "+f1(o.v))});
+  if(!secs.length){ el.innerHTML = ""; return; }
+
+  el.innerHTML = '<div class="chk"><div class="hd">'+dStr(d)+'のチェック</div>'+
+    secs.map((s,i)=>
+      '<div class="sec'+(i?"":" first")+'"><div class="bd">'+
+        '<div class="t">'+s.t+'</div>'+
+        '<div class="nm">'+s.nm.map(x=>'<span>'+x+'</span>').join("")+'</div>'+
+      '</div><button class="mini" data-chk="'+s.k+'">消す</button></div>').join("")+
+    '</div>';
+
+  el.querySelectorAll("[data-chk]").forEach(b=>{
+    b.onclick = ()=>chkHide(d, b.dataset.chk);
+  });
+}
+
 function renderDetail(){
+  renderCheck();
   const all = rowsOf(curMonth);
   const rows = fKubun ? all.filter(r=>(r.kubun||"")===fKubun) : all;
   const work = rows.filter(r=>!r.off), offs = rows.filter(r=>r.off);
