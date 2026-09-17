@@ -252,7 +252,14 @@
   /* --- 朝のチェック（明細一覧の一番上に出す帯） --- */
   .chk{background:var(--mag-bg);border-left:3px solid var(--mag);border-radius:2px;
     padding:14px 16px;margin-bottom:18px;}
-  .chk .hd{font-size:15px;font-weight:700;color:var(--mag-d);margin-bottom:10px;}
+  .chk .hd{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:700;
+    color:var(--mag-d);margin-bottom:10px;}
+  .chk .arw{flex:none;min-width:40px;min-height:34px;padding:0 10px;background:transparent;
+    border:1px solid rgba(214,0,108,.4);border-radius:2px;color:var(--mag-d);
+    font-size:14px;line-height:1;cursor:pointer;font-family:inherit;}
+  .chk .arw:hover:not(:disabled){background:#f7d3e4;}
+  .chk .arw:disabled{color:#c9b3bf;border-color:rgba(32,30,29,.14);cursor:default;}
+  .chk .none{font-size:14px;color:var(--mag-d);opacity:.7;}
   .chk .sec{display:flex;align-items:flex-start;gap:14px;padding:10px 0;
     border-top:1px solid rgba(214,0,108,.18);}
   .chk .sec.first{border-top:none;padding-top:0;}
@@ -781,28 +788,86 @@ function bindActs(sel, which){
    ---------------------------------------------------------------------- */
 const CHK_KEY   = "nippoChk";   /* 消した日と見出しを覚えておく場所 */
 const CHK_LIMIT = 8;            /* 平日区分がこの時間を超えたら出す */
+const CHK_KEEP  = 2;            /* 「消した」記録を何か月ぶん残すか */
 
-/* 見る日＝前日。日曜のぶんは見ません（月曜の朝に開いても出しません） */
-function checkDay(){
-  const t = new Date(todayStr()+"T00:00:00");
-  if(isNaN(t)) return null;
-  t.setDate(t.getDate()-1);
-  if(t.getDay()===0) return null;
+/* 今みている日。矢印で1日ずつ動かします。
+   chkMonth は「どの月ぶんで決めた日か」。画面右上で月を変えたら決め直します */
+let chkDate = null, chkMonth = null;
+
+/* ---- 日にちの小道具 ---- */
+function ymd(t){
   return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+
          "-"+String(t.getDate()).padStart(2,"0");
 }
-/* その日に「消す」を押した見出しの一覧。覚えておくのは1日ぶんだけなので、
-   日が変わればひとりでに消えます */
-function chkDone(d){
-  try{
-    const v = JSON.parse(localStorage.getItem(CHK_KEY)||"null");
-    return (v && v.d===d && Array.isArray(v.x)) ? v.x : [];
-  }catch(e){ return []; }
+function addDays(s, n){ const t = new Date(s+"T00:00:00"); t.setDate(t.getDate()+n); return ymd(t); }
+function isSun(s){ return new Date(s+"T00:00:00").getDay()===0; }
+function monthLast(m){
+  const a = String(m||"").split("-"), y = Number(a[0]), mo = Number(a[1]);
+  return (y && mo) ? ymd(new Date(y, mo, 0)) : null;
 }
+/* 日曜だったら、同じ月の中で1日ずつさかのぼります。月をまたいだら無しです */
+function chkBack(s, m){
+  for(let i=0; i<8 && s; i++){
+    if(ymOf(s)!==m) return null;
+    if(!isSun(s)) return s;
+    s = addDays(s, -1);
+  }
+  return null;
+}
+/* その月で、いちばん新しく見られる日。今日より先へは進めません */
+function chkMaxDay(m){
+  let s = monthLast(m);
+  if(!s) return null;
+  const t = todayStr();
+  if(s > t) s = t;
+  return chkBack(s, m);
+}
+/* 最初に出す日。今日を含む月なら前日から、そうでなければその月の末日から */
+function chkStart(m){
+  const mx = chkMaxDay(m);
+  if(!mx) return null;
+  const y = addDays(todayStr(), -1);
+  return (mx > y) ? chkBack(y, m) : mx;
+}
+/* 矢印を1回押したときの行き先。無理なら null（＝その矢印は押せません）。
+   日曜は飛ばし、月をまたがず、今日より先へも行きません */
+function chkStep(d, dir){
+  const mx = chkMaxDay(chkMonth);
+  let s = d;
+  for(let i=0; i<8; i++){
+    s = addDays(s, dir);
+    if(ymOf(s)!==chkMonth) return null;
+    if(mx && s > mx) return null;
+    if(!isSun(s)) return s;
+  }
+  return null;
+}
+
+/* ---- 「消す」の記録（ブラウザの中だけ。日報は何も変わりません）----
+   { "2026-09-16":["miss"], "2026-09-15":["over"] } の形で日ごとに覚えます。
+   古いものは読むたびに捨てるので、ためこみません */
+function chkCutoff(){
+  const t = new Date(todayStr()+"T00:00:00");
+  t.setMonth(t.getMonth()-CHK_KEEP);
+  return ymd(t);
+}
+function chkAll(){
+  try{
+    let v = JSON.parse(localStorage.getItem(CHK_KEY)||"null");
+    if(!v || typeof v!=="object" || Array.isArray(v)) return {};
+    /* 前の形（1日ぶんだけ覚えていたころ）のものを移します */
+    if(v.d && Array.isArray(v.x)){ const o = {}; o[v.d] = v.x; v = o; }
+    const out = {}, cut = chkCutoff();
+    Object.keys(v).forEach(k=>{ if(Array.isArray(v[k]) && k >= cut) out[k] = v[k]; });
+    return out;
+  }catch(e){ return {}; }
+}
+function chkDone(d){ return chkAll()[d] || []; }
 function chkHide(d, part){
-  const x = chkDone(d);
+  const all = chkAll();
+  const x = all[d] || (all[d] = []);
   if(x.indexOf(part)<0) x.push(part);
-  try{ localStorage.setItem(CHK_KEY, JSON.stringify({d:d, x:x})); }catch(e){}
+  try{ localStorage.setItem(CHK_KEY, JSON.stringify(all)); }catch(e){}
   renderCheck();
 }
 /* 「平日」とつく区分の合計。遅刻・早退は引きません。
@@ -811,6 +876,13 @@ function weekdayOf(r){
   const h = r.h || {};
   let a = 0;
   Object.keys(h).forEach(k=>{ if(k.indexOf("平日")>=0) a += (h[k]||0); });
+  return a;
+}
+/* 「休日」とつく区分の合計。土曜・休日に出た人を赤くしないために見ます */
+function holidayOf(r){
+  const h = r.h || {};
+  let a = 0;
+  Object.keys(h).forEach(k=>{ if(k.indexOf("休日")>=0) a += (h[k]||0); });
   return a;
 }
 function checkOf(d){
@@ -828,42 +900,89 @@ function checkOf(d){
   const miss = WORKERS.filter(w=>w.active!==false && w.name && !got[w.name])
     .map(w=>w.name).sort(byLen);
 
-  /* 平日が8時間を超えている人。日報1枚ごとではなく、
-     その人のその日ぶんを全部足してから見ます（4.0＋4.0＋2.0＝10.0） */
-  const sum = {};
-  work.forEach(r=>{ if(r.n) sum[r.n] = (sum[r.n]||0) + weekdayOf(r); });
+  /* その人のその日ぶんを、平日と休日に分けて足します。
+     日報1枚ごとではありません（4.0＋4.0＋2.0＝10.0 と見ます） */
+  const sum = {}, hol = {};
+  work.forEach(r=>{
+    if(!r.n) return;
+    sum[r.n] = (sum[r.n]||0) + weekdayOf(r);
+    hol[r.n] = (hol[r.n]||0) + holidayOf(r);
+  });
+
+  /* 平日が8時間を超えている人 */
   const over = Object.keys(sum).filter(n=>r1(sum[n]) > CHK_LIMIT)
     .sort(byLen).map(n=>({n:n, v:sum[n]}));
 
-  return (miss.length || over.length) ? {miss:miss, over:over} : null;
+  /* 平日の時間が入っていない人。移動だけ・残業だけで送られていて、
+     本体の時間が抜けている疑いがあります。
+     ・休日区分に時間があれば土曜・休日の出勤なので、赤くしません
+     ・休みの記録がある人も外します
+     ・日報が1枚もない人はここには出ません（「届いていない人」で拾われます） */
+  const offN = {};
+  rows.forEach(r=>{ if(r.off && r.n) offN[r.n] = 1; });
+  const zero = Object.keys(sum)
+    .filter(n=>!offN[n] && r1(sum[n])===0 && r1(hol[n])===0).sort(byLen);
+
+  return (miss.length || over.length || zero.length)
+    ? {miss:miss, over:over, zero:zero} : null;
 }
+/* その日に出勤の日報が届いているか（空の日に出す文を選ぶためだけに使います） */
+function chkHasRows(d){ return rowsOf(ymOf(d)).some(r=>r.d===d && !r.off); }
+
 function renderCheck(){
   const el = document.getElementById("dCheck");
   if(!el) return;
-  const d = checkDay();
-  const c = d ? checkOf(d) : null;
-  if(!c){ el.innerHTML = ""; return; }
+  /* 画面右上で月が変わったら、その月のいちばん新しい対象日から始めます */
+  if(chkMonth !== curMonth){
+    chkMonth = curMonth;
+    chkDate  = chkStart(curMonth);
+  }
+  const d = chkDate;
+  if(!d){ el.innerHTML = ""; return; }
 
+  const c = checkOf(d);
   const done = chkDone(d);
   const secs = [];
-  if(c.miss.length && done.indexOf("miss")<0)
+  if(c && c.miss.length && done.indexOf("miss")<0)
     secs.push({k:"miss", t:"日報が届いていない人（"+c.miss.length+"名）",
       nm:c.miss.map(n=>esc(n))});
-  if(c.over.length && done.indexOf("over")<0)
+  if(c && c.over.length && done.indexOf("over")<0)
     secs.push({k:"over", t:"平日が8時間を超えている人（"+c.over.length+"名）",
       nm:c.over.map(o=>esc(o.n)+" "+f1(o.v))});
-  if(!secs.length){ el.innerHTML = ""; return; }
+  if(c && c.zero.length && done.indexOf("zero")<0)
+    secs.push({k:"zero", t:"平日の時間が入っていない人（"+c.zero.length+"名）",
+      nm:c.zero.map(n=>esc(n))});
 
-  el.innerHTML = '<div class="chk"><div class="hd">'+dStr(d)+'のチェック</div>'+
-    secs.map((s,i)=>
-      '<div class="sec'+(i?"":" first")+'"><div class="bd">'+
-        '<div class="t">'+s.t+'</div>'+
-        '<div class="nm">'+s.nm.map(x=>'<span>'+x+'</span>').join("")+'</div>'+
-      '</div><button class="mini" data-chk="'+s.k+'">消す</button></div>').join("")+
+  /* 中身が空の日でも、日付と矢印の1行は出します。
+     ここを消してしまうと、消したとたんに矢印まで消えて前の日へ戻れなくなります */
+  const prev = chkStep(d, -1), next = chkStep(d, 1);
+  el.innerHTML = '<div class="chk">'+
+    '<div class="hd">'+
+      '<button class="arw" data-go="-1"'+(prev?"":" disabled")+' title="1日前">◀</button>'+
+      '<span>'+dStr(d)+'のチェック</span>'+
+      '<button class="arw" data-go="1"'+(next?"":" disabled")+' title="1日後">▶</button>'+
+    '</div>'+
+    (secs.length
+      ? secs.map((s,i)=>
+          '<div class="sec'+(i?"":" first")+'"><div class="bd">'+
+            '<div class="t">'+s.t+'</div>'+
+            '<div class="nm">'+s.nm.map(x=>'<span>'+x+'</span>').join("")+'</div>'+
+          '</div><button class="mini" data-chk="'+s.k+'">消す</button></div>').join("")
+      : '<div class="none">'+(done.length ? "チェック済み"
+          : chkHasRows(d) ? "気になる人はいません"
+          : "この日は日報が届いていません")+'</div>')+
     '</div>';
 
   el.querySelectorAll("[data-chk]").forEach(b=>{
     b.onclick = ()=>chkHide(d, b.dataset.chk);
+  });
+  el.querySelectorAll("[data-go]").forEach(b=>{
+    b.onclick = ()=>{
+      const to = chkStep(chkDate, Number(b.dataset.go));
+      if(!to) return;
+      chkDate = to;
+      renderCheck();
+    };
   });
 }
 
