@@ -260,6 +260,26 @@
   .chk .arw:hover:not(:disabled){background:#f7d3e4;}
   .chk .arw:disabled{color:#c9b3bf;border-color:rgba(32,30,29,.14);cursor:default;}
   .chk .none{font-size:14px;color:var(--mag-d);opacity:.7;}
+
+  /* --- メンバー（名簿の管理） --- */
+  .mtop{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
+  .mtop .cnt{margin-left:auto;font-size:13px;color:var(--muted);white-space:nowrap;}
+  .wlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;}
+  .wrow{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;
+    background:var(--card);border:1px solid var(--line);border-radius:2px;
+    padding:12px 14px;cursor:pointer;font-family:inherit;}
+  .wrow:hover{border-color:var(--green);}
+  .wrow.off{opacity:.5;}
+  .wrow .ord{flex:none;min-width:24px;font:600 12px/1.7 ui-monospace,monospace;color:var(--faint);}
+  .wrow .bd{flex:1;min-width:0;}
+  .wrow .nm2{font-size:16px;font-weight:600;color:var(--ink);word-break:break-all;}
+  .wrow .sub{font-size:12.5px;color:var(--muted);margin-top:2px;word-break:break-all;}
+  .wrow .tag{flex:none;align-self:center;padding:2px 7px;border-radius:2px;
+    background:var(--steel-bg);color:var(--steel);font-size:11px;font-weight:600;white-space:nowrap;}
+  .mnone{grid-column:1/-1;text-align:center;color:var(--faint);padding:48px 0;}
+  .mfix{font-size:17px;font-weight:600;padding:9px 0;word-break:break-all;}
+  #mMem .note{margin-top:6px;}
+  #mMem .err{color:var(--mag-d);font-size:13.5px;margin-top:10px;min-height:20px;line-height:1.6;}
   .chk .sec{display:flex;align-items:flex-start;gap:14px;padding:10px 0;
     border-top:1px solid rgba(214,0,108,.18);}
   .chk .sec.first{border-top:none;padding-top:0;}
@@ -396,6 +416,19 @@
         <button class="bt o" id="xlDem">出面表のExcelを作る</button>
       </div>
       <div class="note">〇＝松前工場、●＝東レ常駐。「時間」は残業・移動・早出・深夜・突発の合計、「工数」は実働÷8です。自社・協力会社ぜんぶに加えて、<b>会社ごとのシート</b>も付きます（月末にその会社へそのまま渡せます）。</div>
+    </div>
+
+    <div class="pane" id="pMember">
+      <div class="mtop">
+        <input type="text" id="mmSearch" placeholder="名前・所属でさがす">
+        <button class="mini" id="mmAdd">＋ メンバーを追加</button>
+        <div class="cnt" id="mmCnt"></div>
+      </div>
+      <div class="wlist" id="mmList"></div>
+      <div class="note">ここの名簿は、日報アプリ（送信）と確認アプリでも使われます。
+        「隠す」にすると、これからの日報で選べなくなり、朝のチェックの「日報が届いていない人」にも出なくなります。
+        <b>過去の日報と集計はそのまま残ります。</b>
+        名前は後から変えられません。消す機能はありません（隠すで足ります）。</div>
     </div>
 
     <div class="pane" id="pLog">
@@ -681,7 +714,13 @@ let booted = false;
 function boot(){
   if(booted) return;
   booted = true;
-  db.ref("master/workers").on("value", s=>{ WORKERS = Object.values(s.val()||{}); render(); });
+  /* 名簿。直すときにどのキーかが要るので、キーも一緒に持っておきます（_key）。
+     中身の読み方は今までどおりです */
+  db.ref("master/workers").on("value", s=>{
+    const v = s.val() || {};
+    WORKERS = Object.keys(v).map(k=>Object.assign({}, v[k], {_key:k}));
+    render();
+  });
   db.ref("master/jobs").on("value",    s=>{ JOBS    = Object.values(s.val()||{}); render(); });
   db.ref("master/closed").on("value",  s=>{ CLOSED  = s.val()||[]; render(); });
   /* 「注番なしで確定」にした件名。日報は消さず、注番なしのリストから外すだけ */
@@ -720,6 +759,7 @@ function renderNav(){
       {k:"person", l:"個人別",     s:"月合計・職長手当"},
       {k:"job",    l:"工事別工数", s:"注番・区分ごと"},
       {k:"reg",    l:"注番管理",   s:"登録・編集・削除"},
+      {k:"member", l:"メンバー",   s:"名簿の登録・編集"},
       {k:"log",    l:"修正履歴",   s:"誰がいつ直したか"},
       {k:"excel",  l:"Excel出力",  s:"紙の日報と同じ列"},
     ];
@@ -730,18 +770,19 @@ function renderNav(){
       b.onclick = ()=>{ tab = b.dataset.k; curOne = null; renderNav(); render(); };
     });
   }
-  const t = {detail:"明細一覧", person:"個人別", job:"工事別工数", reg:"注番管理", log:"修正履歴", excel:"Excel出力"}[tab];
+  const t = TAB_NAME[tab];
   document.getElementById("ttl").textContent = t;
   updateTitleMonth();
-  ["pDetail","pPerson","pJob","pReg","pLog","pExcel"].forEach((id,i)=>{
+  ["pDetail","pPerson","pJob","pReg","pMember","pLog","pExcel"].forEach((id,i)=>{
     const el = document.getElementById(id);
-    if(el) el.classList.toggle("on", ["detail","person","job","reg","log","excel"][i]===tab);
+    if(el) el.classList.toggle("on", ["detail","person","job","reg","member","log","excel"][i]===tab);
   });
   renderExtraCtrl();
 }
 
+const TAB_NAME = {detail:"明細一覧", person:"個人別", job:"工事別工数",
+  reg:"注番管理", member:"メンバー", log:"修正履歴", excel:"Excel出力"};
 function updateTitleMonth(){
-  const t = {detail:"明細一覧", person:"個人別", job:"工事別工数", reg:"注番管理", log:"修正履歴", excel:"Excel出力"}[tab];
   const el = document.getElementById("ttlMonth");
   if(!el) return;
   // 月に関係のない画面では出さない
@@ -758,6 +799,7 @@ function render(){
   if(tab==="detail") renderDetail();
   else if(tab==="person") renderPerson();
   else if(tab==="reg") renderReg();
+  else if(tab==="member") renderMember();
   else if(tab==="log") renderLog();
   else if(tab==="excel") renderExcel();
   else renderJob();
@@ -1040,6 +1082,8 @@ function renderDetail(){
   bindActs("#dOff","ed2b");
 }
 document.getElementById("dSearch").addEventListener("input", renderDetail);
+document.getElementById("mmSearch").addEventListener("input", renderMember);
+document.getElementById("mmAdd").addEventListener("click", ()=>openMem(null));
 document.getElementById("pSearch").addEventListener("input", renderPerson);
 function card(v,l){ return '<div class="c"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
 
@@ -2234,6 +2278,149 @@ function doDelete(){
     .catch(e=>alert("削除に失敗しました: "+e.message));
 }
 
+/* ---- メンバー（名簿の管理）--------------------------------------------
+   master/workers だけを読み書きします。日報（nippo/…）には一切触りません。
+   名前は後から変えられません。日報は名前の文字で人を結びつけているので、
+   名前を書き換えると過去の日報とのつながりが切れてしまうためです。
+   消す機能も作っていません。「隠す」（active:false）で足ります。
+   ---------------------------------------------------------------------- */
+const W_KUBUN = ["自社","常駐協力","外注協力"];
+const W_NAME_MAX = 30, W_SHOZOKU_MAX = 30;
+let mmQ = "", mmKey = null;    /* mmKey＝直している人のキー。null なら新規 */
+
+/* 画面に出す区分。古い「協力」や空欄は「常駐協力」として見せます
+   （集計で使っている kubunGroup と同じ分け方です） */
+function wKubunOf(w){
+  const k = (w && w.kubun) || "";
+  if(k === "自社") return "自社";
+  if(k === "外注協力") return "外注協力";
+  return "常駐協力";
+}
+/* 新しいキー。今あるキーの続き番号にします（w001, w002 …） */
+function nextWorkerKey(){
+  let mx = 0;
+  WORKERS.forEach(w=>{
+    const m = /^w(\d+)$/.exec(w._key || "");
+    if(m) mx = Math.max(mx, Number(m[1]));
+  });
+  return "w" + String(mx+1).padStart(3, "0");
+}
+
+function renderMember(){
+  const list = document.getElementById("mmList");
+  if(!list) return;
+  const hidden = WORKERS.filter(w=>w.active===false).length;
+  document.getElementById("mmCnt").textContent =
+    WORKERS.length + "名" + (hidden ? "（隠し " + hidden + "）" : "");
+
+  const q = (document.getElementById("mmSearch").value || "").trim();
+  const hit = WORKERS.filter(w=>!q ||
+    String(w.name||"").indexOf(q) >= 0 || String(w.shozoku||"").indexOf(q) >= 0);
+
+  if(!WORKERS.length){
+    list.innerHTML = '<div class="mnone">まだ誰も登録されていません<br>'+
+      '<span style="font-size:13px">「＋ メンバーを追加」から登録してください</span></div>';
+    return;
+  }
+  if(!hit.length){ list.innerHTML = '<div class="mnone">見つかりませんでした</div>'; return; }
+
+  list.innerHTML = hit.map(w=>
+    '<button class="wrow'+(w.active===false ? " off" : "")+'" data-w="'+esc(w._key)+'">'+
+      '<div class="ord">'+(WORKERS.indexOf(w)+1)+'</div>'+
+      '<div class="bd">'+
+        '<div class="nm2">'+esc(w.name||"")+'</div>'+
+        '<div class="sub">'+esc(wKubunOf(w))+(w.shozoku ? "・"+esc(w.shozoku) : "")+'</div>'+
+      '</div>'+
+      (w.active===false ? '<div class="tag">隠し中</div>' : "")+
+    '</button>').join("");
+
+  list.querySelectorAll("[data-w]").forEach(b=>{ b.onclick = ()=>openMem(b.dataset.w); });
+}
+
+function mmErr(t){ document.getElementById("mmErr").textContent = t || ""; }
+function hideMem(){ document.getElementById("mMem").classList.remove("on"); mmKey = null; }
+
+/* key を渡すと編集、渡さなければ新規登録 */
+function openMem(key){
+  const w = key ? WORKERS.find(x=>x._key===key) : null;
+  if(key && !w){ alert("その人が見つかりませんでした。画面を読み直してください。"); return; }
+  mmKey = key || null;
+  const isNew = !w;
+
+  document.getElementById("mmTtl").textContent = isNew ? "メンバーを追加" : "メンバーの編集";
+  document.getElementById("mmNameNew").style.display = isNew ? "" : "none";
+  document.getElementById("mmNameOld").style.display = isNew ? "none" : "";
+  document.getElementById("mmName").value = "";
+  document.getElementById("mmNameFix").textContent = isNew ? "" : (w.name || "");
+  document.getElementById("mmNameNote").textContent = isNew
+    ? "日報アプリで選ぶときの表示名です。あとから変えられないので、気をつけて入れてください。"
+    : "名前は後から変えられません。間違えた場合は、隠してから正しい名前で登録し直してください。";
+
+  document.getElementById("mmKubun").innerHTML =
+    W_KUBUN.map(k=>opt(k, k, isNew ? "自社" : wKubunOf(w))).join("");
+  document.getElementById("mmSho").value = isNew ? "" : (w.shozoku || "");
+
+  const hideBtn = document.getElementById("mmHide");
+  hideBtn.style.display = isNew ? "none" : "";
+  document.getElementById("mmHideHd").style.display = isNew ? "none" : "";
+  const isHidden = !isNew && w.active===false;
+  hideBtn.textContent = isHidden ? "隠すのをやめる" : "この人を隠す";
+  document.getElementById("mmHideNote").textContent = isNew ? "" : (isHidden
+    ? "今は隠しています。戻すと、また日報アプリの名簿に出て、朝のチェックの対象にもなります。"
+    : "隠すと、これからの日報で選べなくなり、朝のチェックの「日報が届いていない人」にも出なくなります。過去の日報と集計はそのまま残ります。");
+
+  const save = document.getElementById("mmSave");
+  save.textContent = isNew ? "登録する" : "保存";
+  /* このダイアログは <script> より後ろにあるので、開くたびに結びつけます
+     （ほかのダイアログと同じやり方です） */
+  save.onclick = ()=>doMemSave();
+  hideBtn.onclick = ()=>doMemSave(isHidden);   /* 隠している人なら戻す、そうでなければ隠す */
+
+  mmErr("");
+  document.getElementById("mMem").classList.add("on");
+}
+
+/* act を渡すと active をその値にします。渡さなければ今のままです。
+   どの道でも name は送らないので（update）、名前は書き換わりません */
+function doMemSave(act){
+  const kubun = document.getElementById("mmKubun").value;
+  if(W_KUBUN.indexOf(kubun) < 0){ mmErr("区分を選んでください。"); return; }
+  const sho = (document.getElementById("mmSho").value || "").trim();
+  if(sho.length > W_SHOZOKU_MAX){ mmErr("所属は"+W_SHOZOKU_MAX+"文字までです。"); return; }
+
+  /* --- 新しく登録する --- */
+  if(!mmKey){
+    const name = (document.getElementById("mmName").value || "").trim();
+    if(!name){ mmErr("名前を入れてください。"); return; }
+    if(name.length > W_NAME_MAX){ mmErr("名前は"+W_NAME_MAX+"文字までです。"); return; }
+    if(/[.#$\[\]\/]/.test(name)){ mmErr("名前に . # $ [ ] / は使えません。"); return; }
+    /* 隠している人も含めて、同じ名前がいないか見ます。
+       日報は名前の文字で人を結びつけているので、同じ名前が2人いると集計が混ざります */
+    if(WORKERS.some(w=>String(w.name||"") === name)){
+      mmErr("「"+name+"」はすでに登録されています。別の表示名にしてください。"+
+            "（同じ名前の人が2人いると、日報の集計が混ざってしまいます）");
+      return;
+    }
+    db.ref("master/workers/"+nextWorkerKey())
+      .set({name:name, kubun:kubun, shozoku:sho, active:true})
+      .then(hideMem)
+      .catch(e=>mmErr("登録に失敗しました: "+e.message));
+    return;
+  }
+
+  /* --- 今いる人を直す --- */
+  const w = WORKERS.find(x=>x._key===mmKey);
+  if(!w){ mmErr("その人が見つかりませんでした。画面を読み直してください。"); return; }
+  const payload = {shozoku:sho, active:(act===undefined ? w.active!==false : act)};
+  /* 区分は、選び直したときだけ送ります。古い「協力」のままの人を、
+     所属を直しただけで「常駐協力」に書き換えてしまわないためです
+     （どちらも kubunGroup では同じ扱いですが、画面の区分の文字は変わります） */
+  if(kubun !== wKubunOf(w)) payload.kubun = kubun;
+  db.ref("master/workers/"+mmKey).update(payload)
+    .then(hideMem)
+    .catch(e=>mmErr("保存に失敗しました: "+e.message));
+}
+
 /* ---- 修正履歴 ---- */
 function renderLog(){
   const list = LOG.slice().sort((a,b)=>String(b.t).localeCompare(String(a.t)));
@@ -2661,6 +2848,31 @@ document.getElementById("xlDem").addEventListener("click", ()=>{
   <div class="btns"><button class="bt" id="mfGo">この内容で日報を直す</button>
     <button class="bt o" onclick="closeFreeFix()">やめる</button></div>
 </div></div>
+<div class="modal" id="mMem"><div class="in">
+  <h3 id="mmTtl">メンバーの編集</h3>
+
+  <div class="ek wide" id="mmNameOld"><label>名前</label>
+    <div class="mfix" id="mmNameFix"></div></div>
+  <div class="ek wide" id="mmNameNew" style="display:none"><label>名前</label>
+    <input type="text" id="mmName" class="tx" maxlength="30" placeholder="日報で表示する名前"></div>
+  <div class="note" id="mmNameNote"></div>
+
+  <div class="ek wide" style="margin-top:14px"><label>区分</label>
+    <select id="mmKubun"></select></div>
+  <div class="ek wide"><label>所属</label>
+    <input type="text" id="mmSho" class="tx" maxlength="30" placeholder="協力会社名（自社なら空欄）"></div>
+
+  <div class="ehd" id="mmHideHd">表示の切り替え</div>
+  <button class="mini" id="mmHide"></button>
+  <div class="note" id="mmHideNote"></div>
+
+  <div class="err" id="mmErr"></div>
+  <div class="btns">
+    <button class="bt" id="mmSave">保存</button>
+    <button class="bt o" onclick="hideMem()">やめる</button>
+  </div>
+</div></div>
+
 <div class="modal" id="mClose"><div class="in">
   <h3>この工事を閉じます</h3>
   <div class="no2" id="mNo"></div>
