@@ -295,6 +295,8 @@
   tr.amber td.nm{color:var(--amber);font-weight:600;}
   tr.grp td{background:var(--tint);font-weight:700;color:var(--green);
     border-top:1px solid var(--line-s);}
+  tr.jgrp{cursor:pointer;user-select:none;}
+  tr.jgrp .tg{display:inline-block;width:1.4em;font-size:12px;}
   .term{font-size:12.5px;color:var(--faint);}
   .term.am{color:var(--amber);font-weight:600;}
   .term.rd{color:var(--mag-d);font-weight:600;}
@@ -528,6 +530,7 @@ let LOG = [], WHO = "", eTarget = null, dTarget = null;
 /* 注番なしで届いている日報。FREEDONE＝「注番なしで確定」としてリストから外した件名 */
 let FREEDONE = [], regFreeMonth = null, regFreeGroups = [], mfFixed = false, mfIdx = null;
 let fKubun = "", pKubun = "", jKubun = "", pSort = "name";
+const jClosed = new Set();   // 工事別工数で閉じている頭2文字（表示だけ。保存しない）
 
 /* ============ 小道具 ============ */
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -1424,19 +1427,36 @@ function renderJob(){
     card(list.filter(x=>!x.no).length,"注番なし");
 
   const max = list.length ? list[0].total : 1;
+  // 注番の頭2文字ごとにまとめる（頭文字はデータから拾う。注番なしは最後）
+  const pg = {};
+  list.forEach(x=>{
+    const p = x.no ? x.no.slice(0,2) : "";
+    (pg[p] = pg[p] || {p, items:[], total:0}).items.push(x);
+    pg[p].total += x.total;
+  });
+  const groups = Object.values(pg).sort((a,b)=>
+    (a.p?0:1)-(b.p?0:1) || b.total-a.total || a.p.localeCompare(b.p));
   document.getElementById("jTable").innerHTML = list.length ? (
     '<thead><tr><th>注番</th><th>工事名</th><th class="num">人数</th><th class="num">日数</th>'+
-    '<th class="num">工数</th><th style="width:160px">割合</th><th>持ち場の内訳</th></tr></thead><tbody>' +
-    list.map(x=>{
-      const kb = Object.keys(x.kubun).sort((a,b)=>x.kubun[b]-x.kubun[a])
-        .map(k=>k+" "+f1(x.kubun[k])).join("　");
-      const pct = max ? Math.round(x.total/max*100) : 0;
-      return '<tr><td><span class="no'+(x.no?"":" free")+'">'+esc(x.no||"―")+'</span></td>'+
-        '<td>'+esc(x.name)+'</td><td class="num">'+x.people+'</td><td class="num">'+x.days+'</td>'+
-        '<td class="num">'+f1(x.total)+'</td>'+
-        '<td><div class="bar"><i style="width:'+pct+'%"></i></div></td>'+
-        '<td style="font-size:13px;color:var(--muted)">'+esc(kb)+'</td></tr>';
-    }).join("") + '</tbody>'
+    '<th class="num">工数</th><th style="width:160px">割合</th><th>持ち場の内訳</th></tr></thead>' +
+    groups.map(gr=>{
+      const shut = jClosed.has(gr.p);
+      return '<tbody><tr class="grp jgrp" data-p="'+esc(gr.p)+'">'+
+        '<td><span class="tg">'+(shut?"▶":"▼")+'</span>'+esc(gr.p||"注番なし")+'</td>'+
+        '<td>'+gr.items.length+'工事</td><td></td><td></td>'+
+        '<td class="num">'+f1(gr.total)+'</td><td></td><td></td></tr></tbody>'+
+        '<tbody'+(shut?' hidden':'')+'>'+
+        gr.items.map(x=>{
+          const kb = Object.keys(x.kubun).sort((a,b)=>x.kubun[b]-x.kubun[a])
+            .map(k=>k+" "+f1(x.kubun[k])).join("　");
+          const pct = max ? Math.round(x.total/max*100) : 0;
+          return '<tr><td><span class="no'+(x.no?"":" free")+'">'+esc(x.no||"―")+'</span></td>'+
+            '<td>'+esc(x.name)+'</td><td class="num">'+x.people+'</td><td class="num">'+x.days+'</td>'+
+            '<td class="num">'+f1(x.total)+'</td>'+
+            '<td><div class="bar"><i style="width:'+pct+'%"></i></div></td>'+
+            '<td style="font-size:13px;color:var(--muted)">'+esc(kb)+'</td></tr>';
+        }).join("") + '</tbody>';
+    }).join("")
   ) : '<tbody><tr><td class="empty">この月の記録はありません</td></tr></tbody>';
 
   // 内訳セレクト
@@ -1484,6 +1504,15 @@ function renderJob(){
     })() + '</tbody>'
   ) : '<tbody><tr><td class="empty">―</td></tr></tbody>';
 }
+// 頭2文字の見出しをタップで開閉（月や区分を変えても開閉状態は残す）
+document.getElementById("jTable").addEventListener("click", e=>{
+  const tr = e.target.closest("tr.jgrp");
+  if(!tr) return;
+  const p = tr.dataset.p;
+  if(jClosed.has(p)) jClosed.delete(p); else jClosed.add(p);
+  tr.parentNode.nextElementSibling.hidden = jClosed.has(p);
+  tr.querySelector(".tg").textContent = jClosed.has(p) ? "▶" : "▼";
+});
 document.getElementById("jobSel").addEventListener("change", e=>{
   curJob = e.target.value; renderJob();
 });
