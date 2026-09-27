@@ -287,8 +287,6 @@
   .chk .t{font-size:13px;font-weight:600;color:var(--mag-d);margin-bottom:2px;}
   .chk .nm{font-size:17px;font-weight:700;color:var(--mag-d);line-height:1.7;}
   .chk .nm span{margin-right:18px;white-space:nowrap;font-variant-numeric:tabular-nums;}
-  .chk .mini{flex:none;color:var(--mag-d);border-color:rgba(214,0,108,.4);}
-  .chk .mini:hover{background:#f7d3e4;}
   /* 名前を押すと、その人のその日の日報を直せる（赤のまま、下線でリンク風に） */
   .chk .nm button.pn{margin:0 18px 0 0;padding:0;background:none;border:none;font:inherit;
     color:inherit;cursor:pointer;white-space:nowrap;font-variant-numeric:tabular-nums;
@@ -844,15 +842,11 @@ function bindActs(sel, which){
      ・日報が届いていない人
      ・平日区分の合計が8時間を超えている人（残業に入れ忘れた疑い）
    帯そのものは読むだけで、日報も名簿も書き換えません。
-   見出し右の「今日は確認済み」はこのブラウザに覚えるだけ（localStorage）で、
-   ほかの人の画面や Realtime Database には何も残りません。
    「8時間を超えている人」「時間が入っていない人」の名前を押すと、
    明細一覧と同じ「直す」画面を開きます（保存も履歴も、その画面のまま）。
    2枚以上あるときは一覧を出し、そこから明細一覧の🗑と同じ削除も呼べます。
    ---------------------------------------------------------------------- */
-const CHK_KEY   = "nippoChk";   /* 消した日と見出しを覚えておく場所 */
 const CHK_LIMIT = 8;            /* 平日区分がこの時間を超えたら出す */
-const CHK_KEEP  = 2;            /* 「消した」記録を何か月ぶん残すか */
 
 /* 今みている日。矢印で1日ずつ動かします。
    chkMonth は「どの月ぶんで決めた日か」。画面右上で月を変えたら決め直します */
@@ -907,33 +901,9 @@ function chkStep(d, dir){
   return null;
 }
 
-/* ---- 「消す」の記録（ブラウザの中だけ。日報は何も変わりません）----
-   { "2026-09-16":["miss"], "2026-09-15":["over"] } の形で日ごとに覚えます。
-   古いものは読むたびに捨てるので、ためこみません */
-function chkCutoff(){
-  const t = new Date(todayStr()+"T00:00:00");
-  t.setMonth(t.getMonth()-CHK_KEEP);
-  return ymd(t);
-}
-function chkAll(){
-  try{
-    let v = JSON.parse(localStorage.getItem(CHK_KEY)||"null");
-    if(!v || typeof v!=="object" || Array.isArray(v)) return {};
-    /* 前の形（1日ぶんだけ覚えていたころ）のものを移します */
-    if(v.d && Array.isArray(v.x)){ const o = {}; o[v.d] = v.x; v = o; }
-    const out = {}, cut = chkCutoff();
-    Object.keys(v).forEach(k=>{ if(Array.isArray(v[k]) && k >= cut) out[k] = v[k]; });
-    return out;
-  }catch(e){ return {}; }
-}
-function chkDone(d){ return chkAll()[d] || []; }
-function chkHide(d, part){
-  const all = chkAll();
-  const x = all[d] || (all[d] = []);
-  if(x.indexOf(part)<0) x.push(part);
-  try{ localStorage.setItem(CHK_KEY, JSON.stringify(all)); }catch(e){}
-  renderCheck();
-}
+/* 以前あった「確認済み（帯を隠す）」の記録。仕組みはなくしたので、
+   このブラウザに残っていれば捨てます（日報とは関係のない、ブラウザの中だけの記録です） */
+try{ localStorage.removeItem("nippoChk"); }catch(e){}
 /* 「平日」とつく区分の合計。遅刻・早退は引きません。
    引いてしまうと「残業を平日に入れた」という間違いが隠れてしまうためです */
 function weekdayOf(r){
@@ -1005,20 +975,19 @@ function renderCheck(){
   if(!d){ el.innerHTML = ""; return; }
 
   const c = checkOf(d);
-  const done = chkDone(d);
   const secs = [];
-  if(c && c.miss.length && done.indexOf("miss")<0)
-    secs.push({k:"miss", t:"日報が届いていない人（"+c.miss.length+"名）",
+  if(c && c.miss.length)
+    secs.push({t:"日報が届いていない人（"+c.miss.length+"名）",
       nm:c.miss.map(n=>esc(n))});
-  if(c && c.over.length && done.indexOf("over")<0)
-    secs.push({k:"over", t:"平日が8時間を超えている人（"+c.over.length+"名）",
+  if(c && c.over.length)
+    secs.push({t:"平日が8時間を超えている人（"+c.over.length+"名）",
       nm:c.over.map(o=>esc(o.n)+" "+f1(o.v)), pn:c.over.map(o=>o.n)});
-  if(c && c.zero.length && done.indexOf("zero")<0)
-    secs.push({k:"zero", t:"平日の時間が入っていない人（"+c.zero.length+"名）",
+  if(c && c.zero.length)
+    secs.push({t:"平日の時間が入っていない人（"+c.zero.length+"名）",
       nm:c.zero.map(n=>esc(n)), pn:c.zero});
 
   /* 中身が空の日でも、日付と矢印の1行は出します。
-     ここを消してしまうと、消したとたんに矢印まで消えて前の日へ戻れなくなります */
+     ここを消してしまうと、矢印まで消えて前後の日へ動けなくなります */
   const prev = chkStep(d, -1), next = chkStep(d, 1);
   el.innerHTML = '<div class="chk">'+
     '<div class="hd">'+
@@ -1033,15 +1002,11 @@ function renderCheck(){
             '<div class="nm">'+s.nm.map((x,j)=>s.pn
               ? '<button class="pn" data-pn="'+esc(s.pn[j])+'" title="この人の日報を直す">'+x+'</button>'
               : '<span>'+x+'</span>').join("")+'</div>'+
-          '</div><button class="mini" data-chk="'+s.k+'">今日は確認済み</button></div>').join("")
-      : '<div class="none">'+(done.length ? "チェック済み"
-          : chkHasRows(d) ? "気になる人はいません"
+          '</div></div>').join("")
+      : '<div class="none">'+(chkHasRows(d) ? "気になる人はいません"
           : "この日は日報が届いていません")+'</div>')+
     '</div>';
 
-  el.querySelectorAll("[data-chk]").forEach(b=>{
-    b.onclick = ()=>chkHide(d, b.dataset.chk);
-  });
   el.querySelectorAll("[data-pn]").forEach(b=>{
     b.onclick = ()=>chkPick(d, b.dataset.pn);
   });
