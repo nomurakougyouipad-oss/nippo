@@ -190,6 +190,8 @@
     border-radius:2px;font-size:15px;cursor:pointer;}
   .warnbox{background:var(--mag-bg);border-left:3px solid var(--mag);border-radius:2px;
     padding:12px 14px;font-size:14px;color:var(--mag-d);margin-bottom:14px;line-height:1.6;}
+  #ovList p{margin:0 0 14px;font-size:16px;line-height:1.7;}
+  #ovList b{color:var(--mag-d);}
 
   /* ---- テンキー ---- */
   .padv{font-size:44px;font-weight:700;text-align:center;padding:10px 0;letter-spacing:.02em;}
@@ -541,6 +543,14 @@
   <button class="btn o sm" style="margin-top:10px" onclick="closeSheet()">やめる</button>
 </div>
 
+<!-- 平日の時間が1日の上限を超えるときは送らない。閉じると確認画面に戻る（入力はそのまま） -->
+<div class="sheet" id="shOver">
+  <h2>送れません</h2>
+  <div id="ovList"></div>
+  <div class="note">・残業なら「残業」の区分に入れてください<br>・送り直しなら、送信履歴の「直す」から変えてください</div>
+  <button class="btn o sm" style="margin-top:16px" onclick="closeSheet()">閉じる</button>
+</div>
+
 <div class="sheet" id="shClose">
   <h2>この工事を閉じます</h2>
   <div style="font-size:20px;font-weight:600" id="clNo"></div>
@@ -581,6 +591,10 @@ const YAKUIN = ["野村","松高","高市","水元","井谷","本山","大西"];
 const WORK_KINDS = ["平日工場","平日現場","休日工場","休日現場"];
 const MGROUPS = ["自社","常駐協力","外注協力"];
 const ALLOW_BORDER = 4;   /* 実働がこの時間以下なら 0.5 */
+/* 同じ人・同じ日の「平日」とつく区分の合計が、これを超えたら送らない。
+   管理画面の朝のチェック（kanri.html の CHK_LIMIT）と同じ数にしておくこと */
+const WEEKDAY_LIMIT = 8;
+const DAY_CHECK_WAIT = 6000;   /* その日の日報を読むのを待つ時間（ミリ秒）。過ぎたら確かめずに送る */
 const STALE_DAYS = 30;
 /* 読み込みの途中でも画面を切り替えられるように、ここで決めておく */
 const SCREENS=["scMe","scTop","scStep1","scStep2","scConfirm","scDone","scJobs","scHist"];
@@ -815,7 +829,7 @@ document.getElementById("meSearch").addEventListener("input", renderMeList);
 let openedSheet=null;
 function openSheet(name){
   const map={cal:"shCal",foreman:"shForeman",job:"shJob",member:"shMember",off:"shOff",pad:"shPad",
-             close:"shClose",del:"shDel"};
+             close:"shClose",del:"shDel",over:"shOver"};
   const id=map[name]; if(!id) return;
   openedSheet=id;
   document.getElementById(id).classList.add("on");
@@ -1496,8 +1510,60 @@ function buildRows(batch, stamp){
   });
   return rows;
 }
-/* 確認画面のボタン。新規なら送信、直しているなら上書き */
-function submitNippo(){ if(S.mode==="edit") doUpdate(); else doSend(); }
+/* 確認画面のボタン。新規なら送信、直しているなら上書き。
+   その前に、平日の時間が1日 WEEKDAY_LIMIT を超える人がいないかを確かめる。
+   読めなかったときは止めずに送る（電波が悪くて送れなくなるほうが困るため） */
+function submitNippo(){
+  const btn=document.getElementById("btnSend");
+  if(btn.disabled) return;
+  const label=btn.textContent;
+  btn.disabled=true; btn.textContent="確認中...";
+  fetchDayRows(S.date).then(overWeekday).catch(()=>null).then(over=>{
+    btn.disabled=false; btn.textContent=label;
+    if(over && over.length){ showOver(over); return; }
+    if(!over) alert("確認できませんでした。送信します");
+    if(S.mode==="edit") doUpdate(); else doSend();
+  });
+}
+
+/* ---- 平日8時間超の確認 ---- */
+/* 「平日」とつく区分の合計。kanri.html の weekdayOf と同じ式（遅刻・早退は引かない） */
+function weekdayOf(r){
+  const h = r.h || {};
+  let a = 0;
+  Object.keys(h).forEach(k=>{ if(k.indexOf("平日")>=0) a += (h[k]||0); });
+  return a;
+}
+/* その日の日報だけを読む。待ちきれなければ失敗にする */
+function fetchDayRows(ds){
+  const q=db.ref("nippo/"+ds.slice(0,7)+"/rows").orderByChild("d").equalTo(ds).once("value")
+    .then(snap=>{ const v=snap.val()||{}; return Object.keys(v).map(k=>v[k]).filter(Boolean); });
+  const t=new Promise((_,ng)=>setTimeout(()=>ng(new Error("timeout")),DAY_CHECK_WAIT));
+  return Promise.race([q,t]);
+}
+/* 超える人の一覧。送信者も注番も問わず、その日に届いている分を全部数える。
+   直しているときは、直そうとしている元の送信の分は数えない（入れ替わるので）。
+   今回の平日が0の人（残業だけ・休日だけ）は、今回の送信で増えないので止めない */
+function overWeekday(dayRows){
+  const mine=(S.mode==="edit"&&S.editB) ? (r=>inBatch(r,S.editB)) : (()=>false);
+  const had={};
+  dayRows.forEach(r=>{
+    if(!r.n || r.off || r.d!==S.date || mine(r)) return;
+    had[r.n]=(had[r.n]||0)+weekdayOf(r);
+  });
+  return S.sel.map(n=>({n:n, had:had[n]||0, add:weekdayOf({h:hoursFor(n)})}))
+    .filter(x=>x.add>0 && r1(x.had+x.add)>WEEKDAY_LIMIT);
+}
+function showOver(list){
+  document.getElementById("ovList").innerHTML=list.map(x=>
+    '<p><b>'+esc(x.n)+'さん</b> は '+esc(dShort(S.date))+'の平日の時間が<br>'+
+    (r1(x.had)>0
+      ? 'すでに <b>'+f1(x.had)+'</b> 届いています。<br>'+
+        '今回の <b>'+f1(x.add)+'</b> を足すと <b>'+f1(x.had+x.add)+'</b> になります。'
+      /* まだ届いていない人は、今回の分だけで超えている */
+      : '今回の <b>'+f1(x.add)+'</b> だけで '+f1(WEEKDAY_LIMIT)+' を超えています。')+'</p>').join("");
+  openSheet("over");
+}
 
 function doSend(){
   const btn=document.getElementById("btnSend");
