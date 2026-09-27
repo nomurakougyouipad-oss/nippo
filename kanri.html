@@ -289,6 +289,18 @@
   .chk .nm span{margin-right:18px;white-space:nowrap;font-variant-numeric:tabular-nums;}
   .chk .mini{flex:none;color:var(--mag-d);border-color:rgba(214,0,108,.4);}
   .chk .mini:hover{background:#f7d3e4;}
+  /* 名前を押すと、その人のその日の日報を直せる（赤のまま、下線でリンク風に） */
+  .chk .nm button.pn{margin:0 18px 0 0;padding:0;background:none;border:none;font:inherit;
+    color:inherit;cursor:pointer;white-space:nowrap;font-variant-numeric:tabular-nums;
+    text-decoration:underline;text-decoration-color:rgba(214,0,108,.4);text-underline-offset:4px;}
+  .chk .nm button.pn:hover{text-decoration-color:currentColor;}
+  /* 同じ日に日報が何枚かあるときの選ぶ一覧 */
+  .pkrow{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);}
+  .pkrow:first-child{border-top:none;}
+  .pkrow .no{flex:none;font:600 14px/1.4 ui-monospace,monospace;letter-spacing:.04em;}
+  .pkrow .jn{flex:1;min-width:0;font-size:14.5px;word-break:break-all;}
+  .pkrow .wd{flex:none;font-size:14px;white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .pkrow .mini{flex:none;}
   .bg.am{background:var(--amber-bg);color:var(--amber);}
   tr.amber td{background:var(--amber-bg);}
   tr.amber td .no{color:var(--amber);}
@@ -830,6 +842,8 @@ function bindActs(sel, which){
    読むだけの機能です。日報も名簿も、いっさい書き換えません。
    「消す」はこのブラウザに覚えるだけ（localStorage）で、
    ほかの人の画面や Realtime Database には何も残りません。
+   「8時間を超えている人」「時間が入っていない人」の名前を押すと、
+   明細一覧と同じ「直す」画面を開きます（保存も履歴も、その画面のまま）。
    ---------------------------------------------------------------------- */
 const CHK_KEY   = "nippoChk";   /* 消した日と見出しを覚えておく場所 */
 const CHK_LIMIT = 8;            /* 平日区分がこの時間を超えたら出す */
@@ -993,10 +1007,10 @@ function renderCheck(){
       nm:c.miss.map(n=>esc(n))});
   if(c && c.over.length && done.indexOf("over")<0)
     secs.push({k:"over", t:"平日が8時間を超えている人（"+c.over.length+"名）",
-      nm:c.over.map(o=>esc(o.n)+" "+f1(o.v))});
+      nm:c.over.map(o=>esc(o.n)+" "+f1(o.v)), pn:c.over.map(o=>o.n)});
   if(c && c.zero.length && done.indexOf("zero")<0)
     secs.push({k:"zero", t:"平日の時間が入っていない人（"+c.zero.length+"名）",
-      nm:c.zero.map(n=>esc(n))});
+      nm:c.zero.map(n=>esc(n)), pn:c.zero});
 
   /* 中身が空の日でも、日付と矢印の1行は出します。
      ここを消してしまうと、消したとたんに矢印まで消えて前の日へ戻れなくなります */
@@ -1011,7 +1025,9 @@ function renderCheck(){
       ? secs.map((s,i)=>
           '<div class="sec'+(i?"":" first")+'"><div class="bd">'+
             '<div class="t">'+s.t+'</div>'+
-            '<div class="nm">'+s.nm.map(x=>'<span>'+x+'</span>').join("")+'</div>'+
+            '<div class="nm">'+s.nm.map((x,j)=>s.pn
+              ? '<button class="pn" data-pn="'+esc(s.pn[j])+'" title="この人の日報を直す">'+x+'</button>'
+              : '<span>'+x+'</span>').join("")+'</div>'+
           '</div><button class="mini" data-chk="'+s.k+'">消す</button></div>').join("")
       : '<div class="none">'+(done.length ? "チェック済み"
           : chkHasRows(d) ? "気になる人はいません"
@@ -1020,6 +1036,9 @@ function renderCheck(){
 
   el.querySelectorAll("[data-chk]").forEach(b=>{
     b.onclick = ()=>chkHide(d, b.dataset.chk);
+  });
+  el.querySelectorAll("[data-pn]").forEach(b=>{
+    b.onclick = ()=>chkPick(d, b.dataset.pn);
   });
   el.querySelectorAll("[data-go]").forEach(b=>{
     b.onclick = ()=>{
@@ -1030,6 +1049,39 @@ function renderCheck(){
     };
   });
 }
+
+/* ---- 名前を押したとき：その人のその日の日報を直す ----
+   ここでは何も書き換えません。明細一覧の「直す」と同じ openEdit を呼ぶだけです。
+   保存すると render() が走るので、帯もそのまま計算し直されます */
+function chkRowsOf(d, n){
+  return rowsOf(ymOf(d)).filter(r=>r.d===d && r.n===n && !r.off);
+}
+/* 平日区分の内訳（どれが原因か見えるように）。無ければ「平日 ―」 */
+function chkWdTx(r){
+  const h = r.h || {};
+  const p = Object.keys(h).filter(k=>k.indexOf("平日")>=0 && h[k]).map(k=>esc(k)+" "+f1(h[k]));
+  return p.length ? p.join("　") : "平日 ―";
+}
+function chkPick(d, n){
+  /* openEdit は画面右上の月の日報から探すので、月がずれていたら開きません */
+  if(ymOf(d)!==curMonth) return;
+  const list = chkRowsOf(d, n);
+  if(!list.length){ alert("日報が見つかりませんでした"); return; }
+  if(list.length===1){ openEdit(rowKey(list[0])); return; }
+  document.getElementById("pkTtl").textContent = n+" "+dStr(d)+"の日報（"+list.length+"件）";
+  document.getElementById("pkList").innerHTML = list.map(r=>
+    '<div class="pkrow">'+
+      '<span class="no">'+esc(jobLabel(r))+'</span>'+
+      '<span class="jn">'+esc(r.j||"")+'</span>'+
+      '<span class="wd">'+chkWdTx(r)+'</span>'+
+      '<button class="mini" data-pk="'+esc(rowKey(r))+'">直す</button>'+
+    '</div>').join("");
+  document.querySelectorAll("#pkList [data-pk]").forEach(b=>{
+    b.onclick = ()=>{ hidePick(); openEdit(b.dataset.pk); };
+  });
+  document.getElementById("mPick").classList.add("on");
+}
+function hidePick(){ document.getElementById("mPick").classList.remove("on"); }
 
 function renderDetail(){
   renderCheck();
@@ -2813,6 +2865,12 @@ document.getElementById("xlDem").addEventListener("click", ()=>{
     border:1px solid var(--line-s);border-radius:2px;font-size:16px;font-family:inherit;outline:none">
   <div class="btns"><button class="bt" onclick="saveEdit()">この内容で直す</button>
     <button class="bt o" onclick="hideEdit()">やめる</button></div>
+</div></div>
+<!-- 朝のチェックで名前を押したとき、同じ日に日報が何枚かある人はここで選ぶ -->
+<div class="modal" id="mPick"><div class="in big">
+  <h3 id="pkTtl"></h3>
+  <div id="pkList"></div>
+  <div class="btns"><button class="bt o" onclick="hidePick()">閉じる</button></div>
 </div></div>
 <div class="modal" id="mDel"><div class="in">
   <h3>この行を削除します</h3>
