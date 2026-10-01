@@ -465,7 +465,7 @@
 
 <div class="sheet" id="shForeman">
   <h2>職長を選ぶ</h2>
-  <div class="ngrid" id="shForemanList"></div>
+  <div id="shForemanList"></div>
   <button class="btn d" style="margin-top:12px" onclick="clearForeman()">空欄にする（職長なしで送る）</button>
   <button class="btn o sm" style="margin-top:10px" onclick="closeSheet()">閉じる</button>
 </div>
@@ -835,7 +835,7 @@ function openSheet(name){
   document.getElementById(id).classList.add("on");
   document.getElementById("bd").classList.add("on");
   if(name==="cal") renderCal();
-  if(name==="foreman") renderForemanSheet();
+  if(name==="foreman"){ foremanPartnerOpen=false; renderForemanSheet(); }   /* 開くたびに協力会社の欄はしまう */
   if(name==="job"){ S.jobOwner=""; renderJobSheet(); }   /* 開くたびに担当のしぼり込みは外す */
   if(name==="member") renderMemberSheet();
   if(name==="off") renderOffSheet();
@@ -920,9 +920,37 @@ function renderForeman(){
   document.getElementById("fForeman").className="big"+(S.foreman?"":" off");
   document.getElementById("cForeman").classList.toggle("on",!!S.foreman);
 }
+/* 職長は自社の人をいつも出す。協力会社の人は「協力会社の人から選ぶ」を押すと出る
+   （ふだんの画面は今までどおりすっきり。協力会社の人が職長のときは最初から開いておく） */
+let foremanPartnerOpen=false;
+function foremanChip(n){
+  return '<button class="nchip'+(S.foreman===n?" on":"")+'" data-n="'+esc(n)+'">'+esc(n)+'</button>';
+}
 function renderForemanSheet(){
-  document.getElementById("shForemanList").innerHTML=selfNames().sort(byLen).map(n=>
-    '<button class="nchip'+(S.foreman===n?" on":"")+'" data-n="'+esc(n)+'">'+esc(n)+'</button>').join("");
+  const self=selfNames().sort(byLen);
+  let html='<div class="lbl" style="margin-top:4px">自社</div><div class="ngrid">'+self.map(foremanChip).join("")+'</div>';
+
+  /* 協力（常駐協力 → 外注協力）を会社ごとに */
+  let partner="", partnerCount=0;
+  MGROUPS.filter(g=>g!=="自社").forEach(g=>{
+    const cos={};
+    activeWorkers().filter(w=>mGroupOf(w)===g).forEach(w=>{
+      const co=w.shozoku||"所属なし"; (cos[co]=cos[co]||[]).push(w.name);
+    });
+    Object.keys(cos).sort((a,b)=>a.localeCompare(b,"ja")).forEach(co=>{
+      const l=cos[co].sort(byLen); partnerCount+=l.length;
+      partner+='<div class="lbl">'+esc(g)+' ─ '+esc(co)+'</div><div class="ngrid">'+l.map(foremanChip).join("")+'</div>';
+    });
+  });
+  if(partnerCount){
+    if(S.foreman && self.indexOf(S.foreman)<0) foremanPartnerOpen=true;
+    html+='<button class="btn d" id="fmPartnerBtn" style="margin-top:16px">'+
+      (foremanPartnerOpen?"協力会社の人をしまう ▲":"協力会社の人から選ぶ ▼")+'</button>'+
+      (foremanPartnerOpen?partner:"");
+  }
+  document.getElementById("shForemanList").innerHTML=html;
+  const pb=document.getElementById("fmPartnerBtn");
+  if(pb) pb.onclick=()=>{ foremanPartnerOpen=!foremanPartnerOpen; renderForemanSheet(); };
   document.querySelectorAll("#shForemanList .nchip").forEach(b=>{
     b.onclick=()=>{
       const prev = S.foreman;

@@ -2126,8 +2126,12 @@ function setAllow(rows, batch, v){
 }
 function foremanNames(){
   const self = WORKERS.filter(w=>kubunGroup(w)==="自社" && w.active!==false).map(w=>w.name).sort(byLen);
-  const extra = [...new Set(rowsOf(curMonth).map(r=>r.f).filter(Boolean))].filter(n=>self.indexOf(n)<0);
-  return self.concat(extra.sort(byLen));
+  /* 協力会社の人も職長になれる（日報アプリの「協力会社の人から選ぶ」）ので、自社のあとに並べる */
+  const partner = WORKERS.filter(w=>kubunGroup(w)!=="自社" && w.active!==false).map(w=>w.name)
+    .filter(n=>self.indexOf(n)<0).sort(byLen);
+  const known = self.concat(partner);
+  const extra = [...new Set(rowsOf(curMonth).map(r=>r.f).filter(Boolean))].filter(n=>known.indexOf(n)<0);
+  return known.concat(extra.sort(byLen));
 }
 function opt(v, label, cur){
   return '<option value="'+esc(v)+'"'+(String(cur)===String(v)?" selected":"")+'>'+esc(label)+'</option>';
