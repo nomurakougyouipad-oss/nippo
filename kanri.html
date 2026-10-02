@@ -2655,6 +2655,7 @@ function sheetForPerson(p){
   aoa.push([]);
   aoa.push(["出勤日数 "+p.days+"日　／　人工（÷8）"+ninku(p.kinds).toFixed(2)+
     "　／　職長手当（工数）"+(Math.round((p.allow||0)*10)/10)+
+    (p.redD?"　／　休日（日・祝）"+p.redD+"回":"")+
     (offText(p.offMap)?"　／　休み "+offText(p.offMap):"")]);
   return aoa;
 }
@@ -2670,6 +2671,7 @@ function sumLine(label, list){
   /* 出張・夜勤は1人1日1回で数えたものを足す */
   t.push(list.reduce((a,p)=>a+p.tripD,0)||"",
          list.reduce((a,p)=>a+p.nightD,0)||"",
+         list.reduce((a,p)=>a+p.redD,0)||"",
          round1(list.reduce((a,p)=>a+p.total,0)), Number(nk.toFixed(2)),
          list.reduce((a,p)=>a+p.days,0)||"", offText(mergeOff(list))||"",
          round1(list.reduce((a,p)=>a+p.allow,0))||"");
@@ -2677,11 +2679,11 @@ function sumLine(label, list){
 }
 function sheetSummary(agg){
   const aoa=[["氏名","区分"].concat(PAPER_KINDS).concat(
-    ["出張(日)","夜勤(日)","合計","人工(÷8)","出勤日数","休み(日数)","職長手当(工数)"])];
+    ["出張(日)","夜勤(日)","休日(日・祝)(回)","合計","人工(÷8)","出勤日数","休み(日数)","職長手当(工数)"])];
   agg.forEach(p=>{
     const line=[p.n,p.k];
     PAPER_KINDS.forEach(k=>line.push(p.kinds[k]?round1(p.kinds[k]):""));
-    line.push(p.tripD||"", p.nightD||"", round1(p.total), Number(ninku(p.kinds).toFixed(2)),
+    line.push(p.tripD||"", p.nightD||"", p.redD||"", round1(p.total), Number(ninku(p.kinds).toFixed(2)),
       p.days||"", offText(p.offMap)||"", round1(p.allow)||"");
     aoa.push(line);
   });
@@ -2691,7 +2693,7 @@ function sheetSummary(agg){
 /* 会社別 → その中で個人別（協力会社への請求突き合わせ用） */
 function sheetByCompany(agg){
   const aoa=[["会社","氏名","区分"].concat(PAPER_KINDS).concat(
-    ["出張(日)","夜勤(日)","合計","人工(÷8)","出勤日数","休み(日数)","職長手当(工数)"])];
+    ["出張(日)","夜勤(日)","休日(日・祝)(回)","合計","人工(÷8)","出勤日数","休み(日数)","職長手当(工数)"])];
   const sorted = sortByCompany(agg);
   const cos = [...new Set(sorted.map(coOf))];
   cos.forEach(co=>{
@@ -2700,7 +2702,7 @@ function sheetByCompany(agg){
     list.forEach(p=>{
       const line=[co, p.n, p.k];
       PAPER_KINDS.forEach(k=>line.push(p.kinds[k]?round1(p.kinds[k]):""));
-      line.push(p.tripD||"", p.nightD||"",
+      line.push(p.tripD||"", p.nightD||"", p.redD||"",
         round1(p.total), Number(ninku(p.kinds).toFixed(2)),
         p.days||"", offText(p.offMap)||"", round1(p.allow)||"");
       aoa.push(line);
