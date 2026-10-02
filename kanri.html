@@ -912,6 +912,48 @@ function weekdayOf(r){
   Object.keys(h).forEach(k=>{ if(k.indexOf("平日")>=0) a += (h[k]||0); });
   return a;
 }
+/* ---- 暦の休日（日曜・祝日） ----
+   時間や区分には関係なく、カレンダーで決まる休みの日。
+   祝日は法律どおりに計算する（振替休日・国民の休日も含む）。会社の休み（お盆・年末年始など）は入れない */
+const JP_HOL_CACHE = {};
+function jpHolidays(y){
+  if(JP_HOL_CACHE[y]) return JP_HOL_CACHE[y];
+  const h = {};
+  const key = (m,d)=> y+"-"+String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+  const nthMon = (m,n)=>{ const w = new Date(y,m-1,1).getDay(); return 1 + ((8-w)%7) + (n-1)*7; };
+  const shunbun = Math.floor(20.8431 + 0.242194*(y-1980) - Math.floor((y-1980)/4));
+  const shubun  = Math.floor(23.2488 + 0.242194*(y-1980) - Math.floor((y-1980)/4));
+  [[1,1,"元日"],[1,nthMon(1,2),"成人の日"],[2,11,"建国記念の日"],[2,23,"天皇誕生日"],
+   [3,shunbun,"春分の日"],[4,29,"昭和の日"],[5,3,"憲法記念日"],[5,4,"みどりの日"],[5,5,"こどもの日"],
+   [7,nthMon(7,3),"海の日"],[8,11,"山の日"],[9,nthMon(9,3),"敬老の日"],[9,shubun,"秋分の日"],
+   [10,nthMon(10,2),"スポーツの日"],[11,3,"文化の日"],[11,23,"勤労感謝の日"]]
+    .forEach(a=>{ h[key(a[0],a[1])] = a[2]; });
+  /* 振替休日：祝日が日曜なら、そのあとの祝日でない日 */
+  Object.keys(h).sort().forEach(k=>{
+    const d = new Date(k+"T00:00:00");
+    if(d.getDay()!==0) return;
+    const x = new Date(d);
+    do { x.setDate(x.getDate()+1); } while(h[key(x.getMonth()+1, x.getDate())] && x.getFullYear()===y);
+    if(x.getFullYear()===y) h[key(x.getMonth()+1, x.getDate())] = "振替休日";
+  });
+  /* 国民の休日：祝日と祝日にはさまれた日 */
+  Object.keys(h).sort().forEach(k=>{
+    const d = new Date(k+"T00:00:00"); d.setDate(d.getDate()+1);
+    const mid = key(d.getMonth()+1, d.getDate());
+    const n2 = new Date(d); n2.setDate(n2.getDate()+1);
+    if(!h[mid] && d.getDay()!==0 && d.getFullYear()===y && h[key(n2.getMonth()+1, n2.getDate())]) h[mid] = "国民の休日";
+  });
+  return (JP_HOL_CACHE[y] = h);
+}
+/* その日が日曜か祝日なら名前を返す（それ以外は空） */
+function redDayOf(ds){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ds||""));
+  if(!m) return "";
+  const hol = jpHolidays(Number(m[1]))[ds];
+  if(hol) return hol;
+  return new Date(ds+"T00:00:00").getDay()===0 ? "日曜" : "";
+}
+
 /* 「休日」とつく区分の合計。土曜・休日に出た人を赤くしないために見ます */
 function holidayOf(r){
   const h = r.h || {};
@@ -1244,6 +1286,8 @@ function aggPeople(kubunFilter){
       /* 出張・夜勤は1日1回。同じ日に2件送られていても、その日は1回 */
       tripD:new Set(mine.filter(r=>r.s).map(r=>r.d)).size,
       nightD:new Set(mine.filter(r=>r.y).map(r=>r.d)).size,
+      /* 日曜・祝日に日報が出ている日の数。時間や区分（移動だけでも）に関係なく1日1回 */
+      redD:new Set(mine.filter(r=>redDayOf(r.d)).map(r=>r.d)).size,
       total:mine.reduce((a,r)=>a+netOf(r),0),
       kinds:kinds, offMap:offMap, offN:myOff.length,
       allow:allow, rows:mine, offRows:myOff, leadB:leadB
@@ -1388,6 +1432,8 @@ function renderOne(){
   /* 出張・夜勤は1日1回。0回のときは出さない */
   if(p.tripD)  figs.push({l:"出張", v:p.tripD+"回", big:true});
   if(p.nightD) figs.push({l:"夜勤", v:p.nightD+"回", big:true});
+  /* 休日（日曜・祝日）に出た回数。暦どおりで、移動だけの日も1回 */
+  figs.push({l:"休日（日・祝）", v:(p.redD ? p.redD+"回" : "―"), big:true});
   figs.push(
     {l:"人工（÷8）", v:ninku(p.kinds).toFixed(2)},
     {l:"職長手当（工数）", v:(p.allow?allowTx(p.allow):"―"), g:true}
@@ -1419,6 +1465,8 @@ function renderOne(){
       const tags = [];
       if(r.s) tags.push('<span class="tg">出張</span>');
       if(r.y) tags.push('<span class="tg">夜勤</span>');
+      const rd = redDayOf(r.d);
+      if(rd) tags.push('<span class="tg" title="'+esc(rd)+'">休日</span>');
       const mt = matesOf(r, monthRows);
       return '<tr><td>'+dStr(r.d)+'</td>'+
         '<td><span class="no'+(r.no?"":" free")+'">'+esc(r.no||"―")+'</span></td>'+
