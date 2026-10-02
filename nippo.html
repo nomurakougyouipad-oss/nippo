@@ -771,13 +771,17 @@ db.ref("master").on("value", snap=>{
 });
 db.ref("nippo").on("value", snap=>{
   ALLDATA=snap.val()||{};
-  const last={}, free=new Set(), sd=new Set();
+  const last={}, freeRows=[], sd=new Set();
   allRows().forEach(r=>{
     if(r.no&&r.d&&(!last[r.no]||r.d>last[r.no])) last[r.no]=r.d;
-    if(!r.no&&r.j) free.add(r.j);
+    if(!r.no&&r.j) freeRows.push(r);
     if(r.d) sd.add(r.d);
   });
-  LASTUSED=last; FREE_NAMES=[...free].slice(0,20); SENT_DAYS=sd;
+  /* 注番なしの件名：新しい日付→新しい送信時刻の順に並べ、同じ件名は1つにして上から30個 */
+  freeRows.sort((a,b)=>
+    String(b.d||"").localeCompare(String(a.d||"")) || String(b.at||"").localeCompare(String(a.at||"")));
+  const free=new Set(); freeRows.forEach(r=>free.add(r.j));
+  LASTUSED=last; FREE_NAMES=[...free].slice(0,30); SENT_DAYS=sd;
   renderAll();
 });
 
