@@ -234,6 +234,7 @@
     color:var(--muted);text-decoration:underline;cursor:pointer;padding:4px 0;}
 
   /* ---- 送信履歴 ---- */
+  .hmon{font-size:14px;font-weight:700;color:var(--muted);margin:18px 0 8px;}
   .hcard{border:1px solid var(--line);border-radius:2px;padding:15px 16px;margin-bottom:12px;background:var(--card);}
   .hcard .hd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
   .hcard .dt{font-size:14.5px;color:var(--muted);}
@@ -286,7 +287,7 @@
   <div class="sub" id="topDate"></div>
   <div class="menu">
     <button class="mbtn p" onclick="goSend()">日報を送る<div class="s">職長 ─ 今日の分を入力</div></button>
-    <button class="mbtn o" onclick="goHist()">送信履歴<div class="s" id="topHistSub">今月 自分が送った日報</div></button>
+    <button class="mbtn o" onclick="goHist()">送信履歴<div class="s" id="topHistSub">直近1か月 自分が送った日報</div></button>
     <button class="mbtn g" onclick="goJobs()">工事一覧<div class="s" id="topJobsSub">注番と件名を調べる</div></button>
   </div>
   <div class="mebar" id="topMe" style="display:none">
@@ -858,7 +859,7 @@ function renderTop(){
   mb.style.display=ME?"flex":"none";
   document.getElementById("topMeName").textContent=ME?ME+" さん":"";
   document.getElementById("topHistSub").textContent=ME
-    ? "今月 "+ME+"さんが送った日報 "+myBatches().length+"件 ─ 直す・消す・同じ内容で送る"
+    ? "直近1か月 "+ME+"さんが送った日報 "+myBatches().length+"件 ─ 直す・消す・同じ内容で送る"
     : "先にお名前を登録してください";
   const rows=allRows().filter(r=>!r.off).sort((a,b)=>
     String(b.d).localeCompare(String(a.d)) || String(b.at||"").localeCompare(String(a.at||"")));
@@ -1645,7 +1646,18 @@ function resetInput(){
 }
 function finishSend(){ resetInput(); goTop(); }
 
-/* ================== 送信履歴（今月・自分が送った分） ================== */
+/* ================== 送信履歴（直近1か月・自分が送った分） ================== */
+/* 月の変わり目でも前の月の分が見られるように、今日から31日前までを出す。
+   直す・消すは、その日報の日付の月で行うので、前の月の分でもそのまま使える */
+const HIST_DAYS = 31;
+function histFrom(){
+  const d=new Date(todayStr()+"T00:00:00"); d.setDate(d.getDate()-HIST_DAYS);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function histRows(){
+  const from=histFrom(), ms=[...new Set([from.slice(0,7), curYm()])];
+  return ms.reduce((a,m)=>a.concat(monthRows(m)),[]).filter(r=>String(r.d||"")>=from);
+}
 /* 拾うのは「誰が送ったか（by）」。職長欄（f）では拾わない。
    自分がメンバーに入っていなくても、職長欄を空にして送っていても出る。
    by が入っていない古い日報だけ、今までどおり職長欄で拾う */
@@ -1653,7 +1665,7 @@ function sentByMe(r){ return r.by ? r.by===ME : (r.f||"")===ME; }
 function myBatches(){
   if(!ME) return [];
   const bt={};
-  monthRows(curYm()).filter(sentByMe).forEach(r=>{
+  histRows().filter(sentByMe).forEach(r=>{
     const k=rowBatchKey(r); (bt[k]=bt[k]||[]).push(r);
   });
   return Object.keys(bt).map(k=>({key:k, batch:bt[k][0].batch||"", rows:bt[k]}))
@@ -1665,18 +1677,23 @@ function goHist(){
   showScreen("scHist"); renderHist();
 }
 function renderHist(){
-  document.getElementById("histMonth").textContent=curYm().replace("-","年")+"月";
+  document.getElementById("histMonth").textContent=dShort(histFrom()).replace(/（.*）/,"")+"〜今日";
   document.getElementById("histFlash").innerHTML=
     S.flash?'<div class="flash">'+esc(S.flash)+'</div>':"";
   HIST=myBatches();
   document.getElementById("histNote").textContent=
-    ME+"さんがこの端末から送った、今月の日報です。（"+HIST.length+"件・新しい順）"+
+    ME+"さんがこの端末から送った、直近1か月の日報です。（"+HIST.length+"件・新しい順）"+
     "　職長かどうかは関係ありません。";
+  let lastM="";
   document.getElementById("histList").innerHTML=HIST.length?HIST.map((b,i)=>{
     const r=b.rows[0];
+    /* 月が変わるところに、小さく「◯月」の見出しを入れる */
+    const m=String(r.d||"").slice(0,7);
+    const mh=(m!==lastM)?'<div class="hmon">'+Number(m.slice(5))+'月</div>':"";
+    lastM=m;
     const work=b.rows.filter(x=>!x.off), offs=b.rows.filter(x=>x.off);
     const t=work.reduce((a,x)=>a+netOf(x),0);
-    return '<div class="hcard">'+
+    return mh+'<div class="hcard">'+
       '<div class="hd"><span class="dt">'+dShort(r.d)+
         (r.at?'　'+esc(String(r.at).split(" ")[1]||"")+' 送信':'')+
         (b.rows.some(x=>x.editAt)?'　（直した分）':'')+'</span>'+
@@ -1691,7 +1708,7 @@ function renderHist(){
         '<button class="del" data-dl="'+i+'">消す</button>'+
         '<button class="rep" data-cp="'+i+'">同じ内容で送る</button>'+
       '</div></div>';
-  }).join(""):'<div class="empty">今月はまだ送っていません。</div>';
+  }).join(""):'<div class="empty">この1か月はまだ送っていません。</div>';
   document.querySelectorAll("#histList [data-ed]").forEach(b=>{
     b.onclick=()=>startEdit(Number(b.dataset.ed)); });
   document.querySelectorAll("#histList [data-dl]").forEach(b=>{
