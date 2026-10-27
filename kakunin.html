@@ -286,31 +286,49 @@ function mGroupOfK(k){
   if(k==="外注協力") return "外注協力";
   return "常駐協力";
 }
-/* ---- 職長手当（工数） ---- */
+/* ---- 職長手当（工数） ----
+   管理画面（kanri.html）の leadUnit・leadAgg と同じ数え方。直すときは両方そろえること。
+   1人1日ごとに数える。同じ職長・同じ日・同じ人が何件かあれば、時間を足してから決める。
+     基本時間（遅刻・早退を引いた後）が 4時間より多い→1、4時間まで→0.5、0→0
+   本人も数える。役員7名は数えない。休みの人は入れない。
+   手で直した数（行の fa）は使わない */
+function r1(v){ return Math.round((v||0)*10)/10; }
 /* 実働＝平日/休日の工場・現場の合計から遅刻・早退を引いたもの */
 function workNetOf(r){
   const h=r.h||{};
   const w=WORK_KINDS.reduce((a,k)=>a+(h[k]||0),0);
   return Math.max(0, w-(r.late||0)-(r.early||0));
 }
-/* 本人も数える。役員7名と休みの人は数えない。
-   実働が0の人（移動・残業だけの日）も数えない。
-   実働が少しでもあれば、4時間以下は0.5、それより上は1.0 */
-function allowUnit(r){
-  if(!r || r.off) return 0;
-  if(YAKUIN.indexOf(r.n)>=0) return 0;
-  const w=workNetOf(r);
+/* 1人1日のカウント。役員は null（数えない） */
+function leadUnit(n, w){
+  if(YAKUIN.indexOf(n)>=0) return null;
   if(w<=0) return 0;
   return w<=ALLOW_BORDER ? 0.5 : 1;
 }
-function autoAllow(rs){ return (rs||[]).reduce((a,r)=>a+allowUnit(r),0); }
-/* 職長がスマホで直した値・事務所が直した値があれば、それを使う */
-function batchAllow(rs){
-  for(let i=0;i<rs.length;i++){
-    const v=rs[i].fa;
-    if(v!==undefined && v!==null && v!=="") return Number(v)||0;
-  }
-  return autoAllow(rs);
+/* 職長ごとのまとまり。職長 → 日 → 人 の順にまとめて、人ごとに時間を足す。
+   返すもの：[{f:職長, sum:合計, days:[{d, nos, jobs, ppl:[{n,w,ot,u}], sum}]}] */
+function leadAgg(rows){
+  const by={};
+  (rows||[]).forEach(r=>{
+    if(!r.f || !r.n || r.off) return;
+    const L=by[r.f]=by[r.f]||{};
+    const D=L[r.d]=L[r.d]||{nos:[], jobs:[], ppl:{}};
+    if(r.no && D.nos.indexOf(r.no)<0) D.nos.push(r.no);
+    const jn=r.j||r.no||"";
+    if(jn && D.jobs.indexOf(jn)<0) D.jobs.push(jn);
+    const P=D.ppl[r.n]=D.ppl[r.n]||{n:r.n, w:0, ot:0};
+    P.w  += workNetOf(r);
+    P.ot += OT_KINDS.reduce((a,k)=>a+((r.h&&r.h[k])||0),0);
+  });
+  return Object.keys(by).sort(byLen).map(f=>{
+    const days=Object.keys(by[f]).sort().map(d=>{
+      const D=by[f][d];
+      const ppl=Object.values(D.ppl).map(p=>Object.assign(p, {w:r1(p.w), u:leadUnit(p.n, r1(p.w))}))
+        .sort((a,b)=>(b.n===f)-(a.n===f) || byLen(a.n, b.n));
+      return {d:d, nos:D.nos, jobs:D.jobs, ppl:ppl, sum:ppl.reduce((a,p)=>a+(p.u||0),0)};
+    });
+    return {f:f, days:days, sum:days.reduce((a,x)=>a+x.sum,0)};
+  });
 }
 function allowTx(v){ return (Math.round((v||0)*10)/10).toFixed(1); }
 
@@ -619,33 +637,29 @@ function renderView(){
     '</div>';
   }).join(""):'<div class="empty">この月の記録はありません</div>';
 
+  /* 職長手当。管理画面と同じ leadAgg で、職長をした日ごとに出す（新しい日が上） */
+  const ld=leadAgg(sent).find(x=>x.f===V.name);
+  const payDays=ld ? ld.days.slice().reverse() : [];
+  const payRows=payDays.map(D=>
+    '<div class="payrow"><span>'+dShort(D.d)+'　'+esc(D.jobs.join("／"))+'</span>'+
+      '<span class="'+(D.sum?"":"x")+'">'+(D.sum?allowTx(D.sum):"対象外")+'</span></div>').join("");
+  document.getElementById("vPay").innerHTML=hasSent?
+    '<div class="step">職長手当（'+(V.month||"").replace("-","年")+'月）</div>'+
+    '<div class="n">'+allowTx(ld ? ld.sum : 0)+'<span>工数 ／ 日報から自動で計算</span></div>'+
+    '<div style="margin-top:12px">'+payRows+'</div>'+
+    '<div class="note">自分を含めて、1人1日ごとに数えます。同じ日に何件か出していても、同じ人の時間は足してから数えます。実働（平日・休日の工場現場から遅刻・早退を引いた分）が4時間より多ければ1.0、4時間までなら0.5です。実働がない人（移動・残業だけ）、役員7名、休みの人は数えません。手で直した数は使いません。</div>':"";
+
+  /* 出した日報（送信ごと）。職長手当は日ごとに数えるので、ここには出さない */
   const bt={};
   sent.forEach(r=>{ const k=r.batch||(r.d+"|"+jobKey(r)); (bt[k]=bt[k]||[]).push(r); });
   const keys=Object.keys(bt).sort((a,b)=>String(bt[b][0].d).localeCompare(String(bt[a][0].d)));
-  let payN=0;
-  const payRows=keys.map(k=>{
-    const g=bt[k], r=g[0];
-    const v=batchAllow(g);
-    const edited=g.some(x=>x.faE);
-    payN+=v;
-    return '<div class="payrow"><span>'+dShort(r.d)+'　'+esc(r.j||"")+
-      (r.f&&r.f!==V.name?" ─ 職長 "+esc(r.f):"")+(edited?"　<span class=\"x\">手で直した分</span>":"")+'</span>'+
-      '<span class="'+(v?"":"x")+'">'+(v?allowTx(v):"対象外")+'</span></div>';
-  }).join("");
-  document.getElementById("vPay").innerHTML=hasSent?
-    '<div class="step">職長手当（'+(V.month||"").replace("-","年")+'月）</div>'+
-    '<div class="n">'+allowTx(payN)+'<span>工数 ／ 日報から自動で計算</span></div>'+
-    '<div style="margin-top:12px">'+payRows+'</div>'+
-    '<div class="note">自分を含めて数え、役員7名と休みの人は数えません。実働（平日・休日の工場現場から遅刻・早退を引いた分）がない人も数えません。実働がある人は、4時間以下なら0.5、それより上なら1.0です。移動や残業だけの日は、必要なら職長が送信のときに手で足しています。</div>':"";
-
   document.getElementById("vSentList").innerHTML=keys.length?keys.map(k=>{
     const g=bt[k], r=g[0];
     const work=g.filter(x=>!x.off), offs=g.filter(x=>x.off);
     const t=work.reduce((a,x)=>a+netOf(x),0);
     return '<div class="vsent"><div class="at">'+dShort(r.d)+(r.at?"　"+esc(String(r.at).split(" ")[1]||"")+" 送信":"")+'</div>'+
       '<div class="j">'+(r.no?'<span class="no">'+esc(r.no)+'</span>':'')+esc(r.j||"")+'</div>'+
-      '<div class="s">'+work.length+'人 ／ 合計 '+f1(t)+'時間'+(offs.length?' ／ 休み '+offs.length+'人':'')+
-      ' ／ 職長手当 '+allowTx(batchAllow(g))+'</div></div>';
+      '<div class="s">'+work.length+'人 ／ 合計 '+f1(t)+'時間'+(offs.length?' ／ 休み '+offs.length+'人':'')+'</div></div>';
   }).join(""):'<div class="empty">この月に出した日報はありません</div>';
 }
 

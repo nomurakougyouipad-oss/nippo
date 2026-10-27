@@ -393,16 +393,6 @@
     <dl class="cfm" id="cfmBox" style="margin-top:22px"></dl>
     <div class="cfmtot"><span class="l" id="cfmPeople"></span><span class="v" id="cfmTotal"></span></div>
     <div id="cfmRows"></div>
-    <div id="cfmAllowWrap" style="margin-top:22px">
-      <div class="step">職長手当</div>
-      <button class="row" id="cfmAllowRow" onclick="openAllowPad()">
-        <span id="cfmAllowLbl">自動で計算した数</span>
-        <span class="v" id="cfmAllowVal">0.0</span>
-      </button>
-      <button class="btn d" id="cfmAllowReset" style="margin-top:8px;display:none;text-align:center"
-        onclick="resetAllow()">自動計算に戻す</button>
-      <div class="note" id="cfmAllowNote"></div>
-    </div>
     <div id="cfmWarn" style="margin-top:16px"></div>
     <div class="whybox" id="cfmWhy" style="display:none;margin-top:20px">
       <div class="lb">直す理由（事務所の修正履歴に残ります）</div>
@@ -612,7 +602,6 @@ let S = {
   jobTab:"fixed", jobOwner:"", pad:"0", padTarget:null, padMore:false, calY:0, calM:0, closeTarget:null,
   mgOpen:{"自社":true,"常駐協力":false,"外注協力":false},
   offMgOpen:{"自社":true,"常駐協力":false,"外注協力":false},
-  allow:0, allowE:false,
   /* 送信履歴から直す・消すとき */
   mode:"new", editBatch:null, editYm:null, editAt:"", editB:null, orig:null,
   /* 直しているとき、その日報を最初に送った人。空なら今の端末の名前を入れる */
@@ -731,7 +720,6 @@ function autoAllow(){
     return a + (w<=ALLOW_BORDER ? 0.5 : 1);
   },0);
 }
-function allowNow(){ return S.allowE ? S.allow : autoAllow(); }
 function allowTx(v){ return (Math.round((v||0)*10)/10).toFixed(1); }
 function monthRows(m){ return (ALLDATA[m]&&ALLDATA[m].rows)?ALLDATA[m].rows.filter(Boolean):[]; }
 function allRows(){ return Object.keys(ALLDATA).reduce((a,m)=>a.concat(monthRows(m)),[]); }
@@ -1361,18 +1349,16 @@ function canSend(){
 /* ---- テンキー ---- */
 function openPad(who,kind){
   S.padTarget={who,kind};
-  const isPerson=(who!=="all"&&who!=="allow");
+  const isPerson=(who!=="all");
   const isMinus=(kind==="遅刻"||kind==="早退");
   let cur;
-  if(who==="allow") cur=allowNow();
-  else if(who==="all") cur=S.all[kind]||0;
+  if(who==="all") cur=S.all[kind]||0;
   else if(kind==="遅刻") cur=lateFor(who);
   else if(kind==="早退") cur=earlyFor(who);
   else cur=hoursFor(who)[kind]||0;
   S.pad=cur?cur.toFixed(1):"0";
   document.getElementById("padTitle").textContent=
-    who==="allow" ? "職長手当（工数）"
-    : (who==="all"?"全員分":who)+" ─ "+kind+(isMinus?"（引く時間）":"");
+    (who==="all"?"全員分":who)+" ─ "+kind+(isMinus?"（引く時間）":"");
   /* 個別は、その他の時間を開いていた種類なら最初から開いておく */
   if(isPerson && MORE_KINDS.indexOf(kind)>=0) S.padMore=true;
   renderPadKinds();
@@ -1389,7 +1375,6 @@ function renderPadKinds(){
   const moreBtn=document.getElementById("padMoreBtn");
   const moreBox=document.getElementById("padMoreKinds");
   moreBtn.style.display="none"; moreBox.style.display="none"; moreBox.innerHTML="";
-  if(who==="allow"){ box.style.display="none"; return; }
   box.style.display="flex";
   if(who==="all"){
     /* 全員分は今までどおり。その他の時間は前の画面で開け閉めする */
@@ -1427,11 +1412,6 @@ function renderPad(){
 }
 function applyPad(){
   const t=S.padTarget; if(!t){ closeSheet(); return; }
-  if(t.who==="allow"){
-    S.allow=Math.max(0,Math.min(99,parseFloat(S.pad)||0));
-    S.allowE=true;
-    closeSheet(); renderAllow(); return;
-  }
   const v=Math.max(0,Math.min(24,parseFloat(S.pad)||0));
   if(t.who==="all") S.all[t.kind]=v;
   else if(t.kind==="遅刻"){ if(v) S.late[t.who]=v; else delete S.late[t.who]; }
@@ -1471,7 +1451,6 @@ function goConfirm(){
     return '<div class="srow"><div style="flex:1;min-width:0"><div class="n">'+esc(n)+(ed?'<em>個別</em>':'')+'</div>'+
       '<div class="brk">'+brkFor(n)+'</div></div><div class="t">'+f1(netFor(n))+'</div></div>';
   }).join("");
-  renderAllow();
   const w=[];
   S.sel.forEach(n=>{ if(totalOf(hoursFor(n))===0) w.push(n+"さんの時間が0です。"); });
   document.getElementById("cfmWarn").innerHTML=w.length?'<div class="warnbox">'+w.map(esc).join("<br>")+'</div>':"";
@@ -1488,39 +1467,13 @@ function goConfirm(){
   showScreen("scConfirm");
 }
 
-/* ---- 職長手当 ---- */
-function renderAllow(){
-  const wrap=document.getElementById("cfmAllowWrap");
-  if(!S.foreman){ wrap.style.display="none"; return; }
-  wrap.style.display="block";
-  const auto=autoAllow(), v=allowNow();
-  document.getElementById("cfmAllowVal").textContent=allowTx(v);
-  document.getElementById("cfmAllowLbl").textContent=S.allowE?"手で直した数":"自動で計算した数";
-  document.getElementById("cfmAllowRow").classList.toggle("on",S.allowE);
-  document.getElementById("cfmAllowReset").style.display=S.allowE?"block":"none";
-  const yak=S.sel.filter(n=>YAKUIN.indexOf(n)>=0);
-  const zero=S.sel.filter(n=>YAKUIN.indexOf(n)<0&&workNetFor(n)<=0);
-  const half=S.sel.filter(n=>{ const w=workNetFor(n);
-    return YAKUIN.indexOf(n)<0 && w>0 && w<=ALLOW_BORDER; });
-  document.getElementById("cfmAllowNote").innerHTML=
-    "自動計算 "+allowTx(auto)+"（"+esc(S.foreman)+"さん本人を含めて数えています）"+
-    (yak.length?"<br>役員のため数えていない人："+yak.map(esc).join("・"):"")+
-    (zero.length?"<br>実働がないので数えていない人："+zero.map(esc).join("・")+
-      "（移動・残業だけの日。必要なら下の数字を手で足してください）":"")+
-    (half.length?"<br>実働4時間以下なので0.5で数えた人："+half.map(esc).join("・"):"")+
-    (S.off.length?"<br>休みの人は数えていません："+S.off.map(o=>esc(o.name)).join("・"):"")+
-    "<br>おかしいと思ったら、上をタップして直せます。";
-}
-function openAllowPad(){ openPad("allow","職長手当"); }
-function resetAllow(){ S.allowE=false; S.allow=0; renderAllow(); }
-
 /* ================== 送信 ================== */
 /* 今の入力から、保存する行を組み立てる（新規も、直したときも同じ形） */
 function buildRows(batch, stamp){
   const jobName=S.job?(JOBS.find(j=>j.no===S.job)||{}).name:S.jobFree;
-  /* 職長手当（工数）。この送信の全行に同じ値を持たせて、あとから管理画面で直せるようにする */
-  const fa=S.foreman ? allowNow() : 0;
-  const faE=(S.foreman&&S.allowE) ? 1 : 0;
+  /* この送信だけで数えた職長手当（工数）。記録として全行に同じ値を持たせる。
+     手で直す欄はなくした。月の職長手当は、管理画面・確認アプリが日ごとに数え直すので、この値は使わない */
+  const fa=S.foreman ? autoAllow() : 0;
   /* 誰が送ったか（by）。職長欄（f）とは別。送信履歴はこれで拾う。
      直しているときは、最初に送った人をそのまま残す */
   const by=(S.mode==="edit" ? (S.sentBy||"") : "") || ME || "";
@@ -1532,14 +1485,14 @@ function buildRows(batch, stamp){
       h:Object.assign({},hoursFor(n)),off:0,offReason:"",
       s:S.checks["出張"]?1:0,y:S.checks["夜勤"]?1:0,
       late:lateFor(n),early:earlyFor(n),
-      fa:fa,faE:faE,batch:batch,at:stamp});
+      fa:fa,batch:batch,at:stamp});
   });
   S.off.forEach(o=>{
     const w=WORKERS.find(x=>x.name===o.name);
     rows.push({d:S.date,n:o.name,k:(w?w.kubun:""),shozoku:(w?w.shozoku:""),
       no:S.job||"",j:jobName||"",kubun:S.kubun,f:S.foreman||"",by:by,
       h:{},off:1,offReason:o.reason,s:0,y:0,late:0,early:0,
-      fa:fa,faE:faE,batch:batch,at:stamp});
+      fa:fa,batch:batch,at:stamp});
   });
   return rows;
 }
@@ -1607,7 +1560,6 @@ function doSend(){
   const hm=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
   const stamp=now.getFullYear()+"/"+(now.getMonth()+1)+"/"+now.getDate()+" "+hm;
   const batch="b"+now.getTime();
-  const fa=S.foreman ? allowNow() : 0;
   const rows=buildRows(batch, stamp);
   db.ref("nippo/"+ym+"/rows").once("value").then(snap=>{
     const cur=snap.val()||[];
@@ -1619,8 +1571,7 @@ function doSend(){
       (S.job?'<span style="font-family:ui-monospace,monospace;font-weight:600;color:var(--green)">'+esc(S.job)+'</span> ':'')+esc(jobName||"");
     const g=S.sel.reduce((a,n)=>a+netFor(n),0);
     document.getElementById("doneCnt").textContent=
-      S.sel.length+"人 ／ 合計 "+f1(g)+"時間"+(S.off.length?" ／ 休み "+S.off.length+"人":"")+
-      (S.foreman?" ／ 職長手当 "+allowTx(fa):"");
+      S.sel.length+"人 ／ 合計 "+f1(g)+"時間"+(S.off.length?" ／ 休み "+S.off.length+"人":"");
     btn.disabled=false; btn.textContent="送信する";
     showScreen("scDone");
   }).catch(e=>{
@@ -1631,7 +1582,6 @@ function doSend(){
 function continueNext(){
   S.job=null; S.jobFree=null; S.all={}; S.ovr={}; S.more=false;
   S.checks={出張:false,夜勤:false}; S.late={}; S.early={};
-  S.allow=0; S.allowE=false;
   showScreen("scStep1"); renderAll();
 }
 /* 入力をまっさらに戻す（直している最中のしるしも消す） */
@@ -1641,7 +1591,6 @@ function resetInput(){
   S.date=todayStr();
   S.job=null; S.jobFree=null; S.all={}; S.ovr={}; S.sel=[]; S.off=[]; S.guests=[]; S.more=false;
   S.checks={出張:false,夜勤:false}; S.late={}; S.early={};
-  S.allow=0; S.allowE=false;
   applyTeam();
 }
 function finishSend(){ resetInput(); goTop(); }
@@ -1743,9 +1692,6 @@ function loadBatch(b){
   });
   S.checks={出張:!!rc.s,夜勤:!!rc.y};
   S.more=work.some(r=>MORE_KINDS.some(k=>(r.h||{})[k]));
-  const fa=rows.map(r=>r.fa).find(v=>v!==undefined&&v!==null&&v!=="");
-  S.allowE=rows.some(r=>r.faE);
-  S.allow=S.allowE?(Number(fa)||0):0;
 }
 function startEdit(i){
   const b=HIST[i]; if(!b) return;
@@ -1779,7 +1725,7 @@ function stateSnap(){
   return { d:S.date, no:S.job||"", j:jobName||"", kubun:S.kubun, f:S.foreman||"",
     sel:S.sel.slice().sort(), off:S.off.map(o=>o.name+"（"+o.reason+"）").sort(),
     s:!!S.checks["出張"], y:!!S.checks["夜勤"], per:per,
-    fa:r1(S.foreman?allowNow():0) };
+    fa:r1(S.foreman?autoAllow():0) };
 }
 function rowsSnap(rows){
   const work=rows.filter(r=>!r.off), offs=rows.filter(r=>r.off);

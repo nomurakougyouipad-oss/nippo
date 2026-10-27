@@ -319,6 +319,65 @@
     font-size:14px;cursor:pointer;font-family:inherit;color:var(--muted);}
   .segs button:last-child{border-right:none;}
   .segs button.on{background:var(--green);color:#f3f2f2;font-weight:600;}
+
+  /* --- 職長明細（左に職長の一覧、右にその人の日ごとの箱） --- */
+  .ld-wrap{display:grid;grid-template-columns:250px 1fr;gap:24px;align-items:start;}
+  .ld-list{display:flex;flex-direction:column;gap:6px;}
+  .ld-item{display:grid;grid-template-columns:1fr auto;gap:0 10px;align-items:baseline;width:100%;
+    text-align:left;padding:10px 12px;background:var(--card);border:1px solid var(--line);
+    border-left:3px solid transparent;border-radius:2px;cursor:pointer;font-family:inherit;color:var(--ink);}
+  .ld-item:hover{border-color:var(--green);}
+  .ld-item.on{background:var(--tint);border-color:var(--green);border-left-color:var(--green);}
+  .ld-item .n{font-size:15.5px;font-weight:600;}
+  .ld-item.on .n{color:var(--green);}
+  .ld-item .ct{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .ld-item .d{grid-column:1/-1;font-size:12px;color:var(--faint);}
+  .ld-rule{font-size:12px;color:var(--faint);line-height:1.75;margin-top:16px;}
+  .ld-rule b{color:var(--muted);}
+  .ld-hd{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;
+    padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--line-s);}
+  .ld-hd .who{font-size:22px;font-weight:700;margin-bottom:8px;}
+  .ld-hd .who span{font-size:16px;font-weight:400;color:var(--muted);margin-left:12px;}
+  .ld-hd .figs{margin-bottom:0;}
+  .ld-hd .btns3{display:flex;gap:8px;}
+  .ld-days{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start;}
+  .ld-day{background:var(--card);border:1px solid var(--line);border-radius:2px;break-inside:avoid;}
+  .ld-day .dh{display:flex;align-items:baseline;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);}
+  .ld-day .dt{flex:none;font-size:15px;font-weight:700;}
+  .ld-day .jn{flex:1;min-width:0;font-size:13px;color:var(--muted);line-height:1.5;}
+  .ld-day .dc{flex:none;font-size:12.5px;color:var(--muted);white-space:nowrap;}
+  .ld-day .dc b{font-size:17px;color:var(--green);margin-left:4px;font-variant-numeric:tabular-nums;}
+  .ld-day table{background:transparent;}
+  .ld-day th,.ld-day td{padding:6px 14px;border-bottom:none;vertical-align:middle;}
+  .ld-day th{position:static;background:transparent;font-size:11px;padding-top:8px;}
+  .ld-day tbody tr:last-child td{padding-bottom:10px;}
+  .ld-day tr.me td{font-weight:600;}
+  .ld-me{display:inline-block;margin-left:6px;padding:0 5px;font-size:10.5px;font-weight:600;line-height:1.6;
+    color:var(--green);border:1px solid var(--green);border-radius:2px;vertical-align:1px;}
+  /* カウントの丸。1＝青、0.5＝黄、0＝灰。役員は丸にせず字だけ */
+  .dot{display:inline-flex;align-items:center;justify-content:center;min-width:36px;height:22px;padding:0 8px;
+    border-radius:11px;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .dot.c1{background:#3a6690;color:#fff;}
+  .dot.c5{background:#f1cc55;color:#4d3b05;}
+  .dot.c0{background:#dddada;color:var(--muted);}
+  .yk{font-size:12.5px;color:var(--faint);}
+  @media (max-width:900px){ .ld-wrap{grid-template-columns:1fr;} }
+
+  /* 職長明細の印刷。印刷するときだけ #ldPrint に中身を入れて、ほかは隠す */
+  #ldPrint{display:none;}
+  @media print{
+    @page{size:A4;margin:12mm;}
+    body.ld-printing{background:#fff;}
+    body.ld-printing > *:not(#ldPrint){display:none !important;}
+    body.ld-printing #ldPrint{display:block;}
+    #ldPrint *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    #ldPrint .ld-sheet{break-after:page;}
+    #ldPrint .ld-sheet:last-child{break-after:auto;}
+    #ldPrint .ld-pt{font-size:11px;color:var(--faint);letter-spacing:.1em;margin-bottom:4px;}
+    #ldPrint .figs .f .v.big{font-size:30px;}
+    #ldPrint .ld-days{grid-template-columns:1fr 1fr;gap:8px;}
+    #ldPrint .ld-day th,#ldPrint .ld-day td{padding:4px 10px;}
+  }
 </style>
 </head>
 <body>
@@ -388,7 +447,7 @@
         <div id="pMsg"></div>
         <input type="text" id="pSearch" placeholder="氏名で絞る" style="margin-bottom:12px">
         <div class="wrapT"><table id="pTable" class="paper"></table></div>
-        <div class="note">合計時間は、遅刻・早退を引いた後の時間です。<b>職長手当は工数</b>で数えます（本人を含み、役員7名・休みの人・実働がない人は数えません。1人あたり実働4時間以下は0.5、それより上は1.0）。移動や残業だけの日は数えないので、必要なときは職長がスマホで手入力します。職長が直した送信は、その値を使います。</div>
+        <div class="note">合計時間は、遅刻・早退を引いた後の時間です。<b>職長手当は工数</b>で数えます（1人1日ごと。同じ職長・同じ日・同じ人は時間を足してから、実働4時間以下は0.5、それより上は1.0。本人を含み、役員7名・休みの人・実働がない人は数えません）。手で直した数は使いません。数え方は「職長明細」と同じで、日ごと・人ごとの数はそちらで見られます。</div>
       </div>
       <div id="pOne" style="display:none">
         <div class="onehd">
@@ -396,13 +455,23 @@
           <b id="oneName"></b><span id="oneMonth"></span>
         </div>
         <div class="figs" id="oneFigs"></div>
-        <div class="lead" id="oneNote">人工は平日・休日の実働（工場・現場）÷8。残業・移動・早出・深夜・突発は人工に含めず、それぞれ合計しています。職長手当は工数（本人を含み、役員7名・休みの人・実働がない人は除く。実働4時間以下は0.5）。</div>
+        <div class="lead" id="oneNote">人工は平日・休日の実働（工場・現場）÷8。残業・移動・早出・深夜・突発は人工に含めず、それぞれ合計しています。職長手当は工数（1人1日ごと。同じ日・同じ人は時間を足してから、実働4時間以下は0.5。本人を含み、役員7名・休みの人・実働がない人は除く）。</div>
         <div class="sec-lbl">時間の区分別</div>
         <div id="oneKinds"></div>
         <div class="sec-lbl">日ごとの明細</div>
         <div class="wrapT"><table id="oneRows"></table></div>
         <div id="oneOffWrap"></div>
         <div id="oneLeadWrap"></div>
+      </div>
+    </div>
+
+    <div class="pane" id="pLead">
+      <div class="ld-wrap">
+        <div>
+          <div class="ld-list" id="ldList"></div>
+          <div class="ld-rule" id="ldRule"></div>
+        </div>
+        <div id="ldMain"></div>
       </div>
     </div>
 
@@ -504,6 +573,8 @@
     </div>
   </main>
 </div>
+<!-- 職長明細の印刷用。印刷ボタンを押したときだけ中身が入る -->
+<div id="ldPrint"></div>
 
 <script>
 /* ============ Firebase ============ */
@@ -579,22 +650,56 @@ function kubunGroup(w){
 }
 function workerOf(n){ return WORKERS.find(w=>w.name===n); }
 
-/* ---- 職長手当（工数） ---- */
+/* ---- 職長手当（工数） ----
+   数え方はここ（leadAgg）1か所だけ。個人別・Excel・職長明細は、みんなこれを使う。
+   確認アプリ（kakunin.html）にも同じ leadUnit・leadAgg がある。直すときは両方そろえること。
+   1人1日ごとに数える。同じ職長・同じ日・同じ人が何件かあれば、時間を足してから決める。
+     基本時間（遅刻・早退を引いた後）が 4時間より多い→1、4時間まで→0.5、0→0
+   本人も数える。役員7名は数えない。休みの人は入れない。
+   手で直した数（行の fa）は使わない */
 /* 実働＝平日/休日の工場・現場の合計から遅刻・早退を引いたもの */
 function workNetOf(r){
   const h = r.h || {};
   const w = WORK_KINDS.reduce((a,k)=>a+(h[k]||0),0);
   return Math.max(0, w - (r.late||0) - (r.early||0));
 }
-/* 1人あたりのカウント。休み・役員は0。
-   実働が0の人（移動・残業だけの日）も数えない。
-   実働が少しでもあれば、4時間以下は0.5、それより上は1.0 */
-function allowUnit(r){
-  if(!r || r.off) return 0;
-  if(YAKUIN.indexOf(r.n) >= 0) return 0;
-  const w = workNetOf(r);
+/* 1人1日のカウント。役員は null（数えずに「役員」と出す） */
+function leadUnit(n, w){
+  if(YAKUIN.indexOf(n) >= 0) return null;
   if(w <= 0) return 0;
   return w <= ALLOW_BORDER ? 0.5 : 1;
+}
+/* 職長ごとのまとまり。職長 → 日 → 人 の順にまとめて、人ごとに時間を足す。
+   返すもの：[{f:職長, sum:合計, days:[{d, nos, jobs, ppl:[{n,w,ot,u}], sum}]}] */
+function leadAgg(rows){
+  const by = {};
+  (rows||[]).forEach(r=>{
+    if(!r.f || !r.n || r.off) return;
+    const L = by[r.f] = by[r.f] || {};
+    const D = L[r.d] = L[r.d] || {nos:[], jobs:[], ppl:{}};
+    if(r.no && D.nos.indexOf(r.no) < 0) D.nos.push(r.no);
+    const jn = r.j || r.no || "";
+    if(jn && D.jobs.indexOf(jn) < 0) D.jobs.push(jn);
+    const P = D.ppl[r.n] = D.ppl[r.n] || {n:r.n, w:0, ot:0};
+    P.w  += workNetOf(r);
+    P.ot += OT2_KINDS.reduce((a,k)=>a+((r.h && r.h[k])||0), 0);
+  });
+  return Object.keys(by).sort(byLen).map(f=>{
+    const days = Object.keys(by[f]).sort().map(d=>{
+      const D = by[f][d];
+      /* 職長本人をいちばん上に。あとは名前の順 */
+      const ppl = Object.values(D.ppl).map(p=>Object.assign(p, {w:r1(p.w), u:leadUnit(p.n, r1(p.w))}))
+        .sort((a,b)=>(b.n===f) - (a.n===f) || byLen(a.n, b.n));
+      return {d:d, nos:D.nos, jobs:D.jobs, ppl:ppl, sum:ppl.reduce((a,p)=>a+(p.u||0), 0)};
+    });
+    return {f:f, days:days, sum:days.reduce((a,x)=>a+x.sum, 0)};
+  });
+}
+/* ↓ここから3つは、日報を直す画面の「職長手当（この送信の分）」の欄だけで使う。
+   送信ごとに保存している数（fa）を出したり、計算し直したりする。画面やExcelの集計には使わない */
+function allowUnit(r){
+  if(!r || r.off) return 0;
+  return leadUnit(r.n, workNetOf(r)) || 0;
 }
 function autoAllow(batchRows){
   return (batchRows||[]).reduce((a,r)=>a+allowUnit(r), 0);
@@ -607,10 +712,9 @@ function batchAllow(batchRows){
   }
   return autoAllow(batchRows);
 }
-function batchKey(r){ return r.batch || (r.d+"|"+(r.no||r.j||"")); }
 /* 「一緒に行った人」を出すためのまとまり。
    batch が付いていない古い行は 日付＋工事＋職長 でまとめる（確認アプリと同じ）。
-   職長手当の batchKey とは別にしてある。手当の数え方は今までどおり変えない */
+   職長手当のまとめ方（leadAgg）とは別 */
 function mateKey(r){ return r.batch || (r.d+"|"+(r.no||r.j||"")+"|"+(r.f||"")); }
 /* その送信で同じ現場にいた他の人。休みの人は入れない（確認アプリと同じ） */
 function matesOf(r, rows){
@@ -690,7 +794,7 @@ function openReg(){
   MODE = "reg";
   tab  = "reg";
   /* 日報の画面と、直す・削除のダイアログは、もとの文字ごと取り除く */
-  ["pDetail","pPerson","pJob","pLog","pExcel","mEdit","mDel"].forEach(id=>{
+  ["pDetail","pPerson","pLead","pJob","pLog","pExcel","mEdit","mDel"].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.parentNode.removeChild(el);
   });
@@ -774,6 +878,7 @@ function renderNav(){
     const items = [
       {k:"detail", l:"明細一覧",   s:"全員分の日報"},
       {k:"person", l:"個人別",     s:"月合計・職長手当"},
+      {k:"lead",   l:"職長明細",   s:"職長ごとの日別カウント"},
       {k:"job",    l:"工事別工数", s:"注番・区分ごと"},
       {k:"reg",    l:"注番管理",   s:"登録・編集・削除"},
       {k:"member", l:"メンバー",   s:"名簿の登録・編集"},
@@ -790,20 +895,20 @@ function renderNav(){
   const t = TAB_NAME[tab];
   document.getElementById("ttl").textContent = t;
   updateTitleMonth();
-  ["pDetail","pPerson","pJob","pReg","pMember","pLog","pExcel"].forEach((id,i)=>{
+  ["pDetail","pPerson","pLead","pJob","pReg","pMember","pLog","pExcel"].forEach((id,i)=>{
     const el = document.getElementById(id);
-    if(el) el.classList.toggle("on", ["detail","person","job","reg","member","log","excel"][i]===tab);
+    if(el) el.classList.toggle("on", ["detail","person","lead","job","reg","member","log","excel"][i]===tab);
   });
   renderExtraCtrl();
 }
 
-const TAB_NAME = {detail:"明細一覧", person:"個人別", job:"工事別工数",
+const TAB_NAME = {detail:"明細一覧", person:"個人別", lead:"職長明細", job:"工事別工数",
   reg:"注番管理", member:"メンバー", log:"修正履歴", excel:"Excel出力"};
 function updateTitleMonth(){
   const el = document.getElementById("ttlMonth");
   if(!el) return;
   // 月に関係のない画面では出さない
-  const useMonth = (tab==="detail"||tab==="person"||tab==="job"||tab==="excel");
+  const useMonth = (tab==="detail"||tab==="person"||tab==="lead"||tab==="job"||tab==="excel");
   el.textContent = (useMonth && curMonth) ? ymJP(curMonth) : "";
 }
 function ymJP(m){ const a=String(m||"").split("-"); return a[0]+"年"+Number(a[1])+"月"; }
@@ -815,6 +920,7 @@ function render(){
   renderExtraCtrl();
   if(tab==="detail") renderDetail();
   else if(tab==="person") renderPerson();
+  else if(tab==="lead") renderLead();
   else if(tab==="reg") renderReg();
   else if(tab==="member") renderMember();
   else if(tab==="log") renderLog();
@@ -1248,20 +1354,15 @@ function aggPeople(kubunFilter){
   const rows = kubunFilter ? all.filter(r=>(r.kubun||"")===kubunFilter) : all;
   const work = rows.filter(r=>!r.off), offs = rows.filter(r=>r.off);
   const names = [...new Set(rows.map(r=>r.n))].sort(byLen);
+  /* 職長手当は、職長明細と同じ leadAgg で数える（同じ月・同じ区分のしぼり込みの行から） */
+  const leads = leadAgg(rows);
   return names.map(n=>{
     const mine = work.filter(r=>r.n===n);
     const myOff = offs.filter(r=>r.n===n);
-    /* 職長手当は送信（batch）ごと。休み行も同じ送信に含める */
-    const sent = rows.filter(r=>r.f===n);
-    const bt = {};
-    sent.forEach(r=>{ (bt[batchKey(r)] = bt[batchKey(r)]||[]).push(r); });
-    /* 手当の内訳。ここで足したものが、そのまま下の allow になる（数え方は今までどおり） */
-    const leadB = Object.keys(bt).map(k=>{
-      const g = bt[k];
-      return { rows:g, allow:batchAllow(g), edited:g.some(x=>x.faE) };
-    }).sort((a,b)=>String(a.rows[0].d).localeCompare(String(b.rows[0].d)));
-    let allow = 0;
-    leadB.forEach(b=>{ allow += b.allow; });
+    /* 手当の内訳（職長をした日ごと）。その合計がそのまま allow になる */
+    const ld = leads.find(x=>x.f===n);
+    const leadDays = ld ? ld.days : [];
+    const allow = ld ? ld.sum : 0;
     const kinds = {};
     PAPER_KINDS.forEach(k=>{ kinds[k] = mine.reduce((a,r)=>a+((r.h&&r.h[k])||0),0); });
     /* 休みは「回数」ではなく「日数」で数える。
@@ -1290,7 +1391,7 @@ function aggPeople(kubunFilter){
       redD:new Set(mine.filter(r=>redDayOf(r.d)).map(r=>r.d)).size,
       total:mine.reduce((a,r)=>a+netOf(r),0),
       kinds:kinds, offMap:offMap, offN:myOff.length,
-      allow:allow, rows:mine, offRows:myOff, leadB:leadB
+      allow:allow, rows:mine, offRows:myOff, leadDays:leadDays
     };
   });
 }
@@ -1496,32 +1597,118 @@ function renderOne(){
   bindActs("#oneOff","ed3b");
 
   /* 職長として出した日報。上に出している「職長手当（工数）」の内訳。
-     1件＝1回の送信で、まとめ方も数え方も手当の計算と同じものを使う。
+     1行＝職長をした1日で、まとめ方も数え方も職長明細と同じ（leadAgg）。
      職長として送った日報が1件もない人には、この欄ごと出さない */
-  const lb = p.leadB || [];
-  document.getElementById("oneLeadWrap").innerHTML = lb.length ? (
+  const ld = p.leadDays || [];
+  document.getElementById("oneLeadWrap").innerHTML = ld.length ? (
     '<div class="sec-lbl">職長として出した日報（職長手当の内訳）</div>'+
     '<div class="wrapT"><table id="oneLead">'+
     '<thead><tr><th>日付</th><th>注番</th><th>工事件名</th>'+
     '<th class="num">人数</th><th class="num">工数</th></tr></thead><tbody>'+
-    lb.map(b=>{
-      const r = b.rows[0];
-      const work = b.rows.filter(x=>!x.off), offs = b.rows.filter(x=>x.off);
-      return '<tr><td>'+dStr(r.d)+'</td>'+
-        '<td><span class="no'+(r.no?"":" free")+'">'+esc(r.no||"―")+'</span></td>'+
-        '<td>'+esc(r.j||"")+
-          (b.edited?'<div class="used">手で直した分</div>':"")+'</td>'+
-        '<td class="num">'+work.length+'人'+
-          (offs.length?'<div class="used">休み '+offs.length+'人</div>':"")+'</td>'+
-        '<td class="num big">'+(b.allow?allowTx(b.allow):'<span class="zz">対象外</span>')+'</td></tr>';
-    }).join("")+
-    '<tr class="tot"><td colspan="4">合計（'+lb.length+'件）</td>'+
+    ld.map(D=>
+      '<tr><td>'+dStr(D.d)+'</td>'+
+        '<td>'+(D.nos.length ? D.nos.map(no=>'<span class="no">'+esc(no)+'</span>').join("<br>")
+                             : '<span class="no free">―</span>')+'</td>'+
+        '<td>'+esc(D.jobs.join("／"))+'</td>'+
+        '<td class="num">'+D.ppl.length+'人</td>'+
+        '<td class="num big">'+(D.sum?allowTx(D.sum):'<span class="zz">対象外</span>')+'</td></tr>').join("")+
+    '<tr class="tot"><td colspan="4">合計（'+ld.length+'日）</td>'+
     '<td class="num">'+allowTx(p.allow)+'</td></tr></tbody></table></div>'+
-    '<div class="note">上の「職長手当（工数）」は、この一覧の合計です。1件が1回の送信にあたります。'+
-    '本人を含めて数え、役員7名・休みの人・実働がない人は数えません（実働4時間以下は0.5、それより上は1.0）。'+
-    '職長がスマホで手を入れた送信や、事務所で直した送信は、その値をそのまま使います。</div>'
+    '<div class="note">上の「職長手当（工数）」は、この一覧の合計です。1行が職長をした1日にあたります（同じ日に何件か送っていても1行にまとめます）。'+
+    '数え方は「職長明細」と同じで、人ごとのカウントは職長明細で見られます。手で直した数は使いません。</div>'
   ) : "";
 }
+
+/* ---- 職長明細 ----------------------------------------------------------
+   職長ごとに、日ごと・人ごとのカウントを出す画面。
+   数え方は個人別・Excel の職長手当と同じ leadAgg（上の「職長手当（工数）」）を使います。
+   読むだけで、日報は書き換えません。
+   ---------------------------------------------------------------------- */
+let ldSel = null;   /* 右に出している職長 */
+const LEAD_RULE =
+  '<b>数え方（1人1日ごと）</b><br>'+
+  '基本時間＝平日工場＋平日現場＋休日工場＋休日現場（遅刻・早退を引いた時間）。<br>'+
+  '4時間より多い → 1、4時間まで（ちょうど4時間も）→ 0.5、0時間（残業・移動だけ）→ 0。<br>'+
+  '同じ職長・同じ日・同じ人が何件かあれば、時間を足してから数えます。<br>'+
+  '役員7名は「役員」と出して数えません。職長本人も同じように数えます。休みの人は出しません。<br>'+
+  '残業＝工場残業＋現場残業。<br>'+
+  '「職長」欄の名前でまとめています。手で直した数は使いません（個人別・Excelの職長手当も同じ数え方です）。';
+
+function leadDot(u){
+  if(u === null) return '<span class="yk">役員</span>';
+  return '<span class="dot '+(u===1 ? "c1" : u===0.5 ? "c5" : "c0")+'">'+(u===0.5 ? "0.5" : String(u))+'</span>';
+}
+/* 右の上（画面は「10月」、印刷は年も入れる） */
+function leadHead(x, forPrint){
+  const mo = forPrint ? ymJP(curMonth) : Number(String(curMonth||"").split("-")[1])+"月";
+  return '<div class="ld-hd"><div>'+
+      '<div class="who">'+esc(x.f)+'さん<span>'+esc(mo)+'</span></div>'+
+      '<div class="figs">'+
+        '<div class="f"><div class="l">カウント合計</div><div class="v big g">'+f1(x.sum)+'</div></div>'+
+        '<div class="f"><div class="l">職長をした日数</div><div class="v big">'+x.days.length+'日</div></div>'+
+      '</div></div>'+
+    (forPrint ? '' :
+      '<div class="btns3"><button class="mini" id="ldPrintOne">この人を印刷</button>'+
+      '<button class="mini" id="ldPrintAll">全員まとめて印刷</button></div>')+
+    '</div>';
+}
+/* 日ごとの箱 */
+function leadDays(x){
+  return '<div class="ld-days">'+x.days.map(D=>
+    '<div class="ld-day">'+
+      '<div class="dh"><span class="dt">'+dStr(D.d)+'</span>'+
+        '<span class="jn">'+esc(D.jobs.join("／") || "―")+'</span>'+
+        '<span class="dc">この日<b>'+f1(D.sum)+'</b></span></div>'+
+      '<table><thead><tr><th>名前</th><th class="num">時間</th><th class="num">残業</th><th class="num">カウント</th></tr></thead><tbody>'+
+      D.ppl.map(p=>
+        '<tr'+(p.n===x.f ? ' class="me"' : '')+'><td>'+esc(p.n)+
+          (p.n===x.f ? '<span class="ld-me">職長</span>' : '')+'</td>'+
+        '<td class="num">'+f1(p.w)+'</td>'+
+        '<td class="num">'+(p.ot ? f1(p.ot) : '<span class="zz">―</span>')+'</td>'+
+        '<td class="num">'+leadDot(p.u)+'</td></tr>').join("")+
+      '</tbody></table></div>').join("")+'</div>';
+}
+function renderLead(){
+  const L = document.getElementById("ldList"), R = document.getElementById("ldMain");
+  if(!L || !R) return;
+  document.getElementById("ldRule").innerHTML = LEAD_RULE;
+  const list = leadAgg(rowsOf(curMonth));
+  if(!list.length){
+    L.innerHTML = '<div class="note" style="margin-top:0">この月は、職長の欄が入った日報がありません。</div>';
+    R.innerHTML = "";
+    return;
+  }
+  /* 月を変えて、その職長がいない月になったら、いちばん上の人を出す */
+  if(!ldSel || !list.some(x=>x.f===ldSel)) ldSel = list[0].f;
+  L.innerHTML = list.map(x=>
+    '<button class="ld-item'+(x.f===ldSel ? " on" : "")+'" data-f="'+esc(x.f)+'">'+
+      '<span class="n">'+esc(x.f)+'</span><span class="ct">'+f1(x.sum)+'</span>'+
+      '<span class="d">職長をした日 '+x.days.length+'日</span></button>').join("");
+  L.querySelectorAll("[data-f]").forEach(b=>{
+    b.onclick = ()=>{ ldSel = b.dataset.f; renderLead(); };
+  });
+  const cur = list.find(x=>x.f===ldSel);
+  R.innerHTML = leadHead(cur, false) + leadDays(cur);
+  document.getElementById("ldPrintOne").onclick = ()=>printLead(false);
+  document.getElementById("ldPrintAll").onclick = ()=>printLead(true);
+}
+/* 印刷。1人＝1枚から始める（全員のときは、職長ごとに紙を分ける） */
+function printLead(all){
+  const list = leadAgg(rowsOf(curMonth));
+  const tg = all ? list : list.filter(x=>x.f===ldSel);
+  if(!tg.length) return;
+  document.getElementById("ldPrint").innerHTML = tg.map(x=>
+    '<section class="ld-sheet"><div class="ld-pt">よつば建設工業　職長明細</div>'+
+      leadHead(x, true) + leadDays(x) +
+      '<div class="ld-rule">'+LEAD_RULE+'</div></section>').join("");
+  document.body.classList.add("ld-printing");
+  window.print();
+}
+window.addEventListener("afterprint", ()=>{
+  if(!document.body.classList.contains("ld-printing")) return;
+  document.body.classList.remove("ld-printing");
+  document.getElementById("ldPrint").innerHTML = "";
+});
 
 /* ---- 工事別工数 ---- */
 function renderJob(){
