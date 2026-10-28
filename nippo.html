@@ -23,6 +23,8 @@
     --mag:#d6006c; --mag-d:#8e0b4c; --mag-bg:#fbe6f0; --mag-l:#a8306f;
     --amber:#a86a12; --amber-bg:#faf0dc;
     --steel:#33526e; --steel-bg:#e8eff5;
+    /* 監督・指揮者モードの目印（オレンジ）。茶色の字と地の差は約9倍あり、小さい字でも読める */
+    --ks-bg:#ffe8cc; --ks-line:#d46a00; --ks-ink:#5c3200;
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{font-family:"Hiragino Sans","Yu Gothic UI","Noto Sans JP",sans-serif;
@@ -55,6 +57,29 @@
   .bar-top .bk{background:transparent;border:none;font-size:16px;color:var(--muted);cursor:pointer;padding:4px 0;}
   .bar-top .tt{font-size:17px;font-weight:600;}
   .bar-top .rt{margin-left:auto;font-size:13px;color:var(--faint);}
+  .bar-top{flex-wrap:wrap;}
+
+  /* ---- 監督・指揮者モード（JFE・神戸製鋼・大洲バイオマス） ----
+     入口のボタン・上の帯・確認画面の囲みはオレンジ（うすいオレンジの地に茶色の字）。
+     ほかの部品（えらぶ画面・②の札など）は、職長のときと見分けやすいよう青のまま */
+  .ksbar{display:none;}
+  .bar-top .ksbar.on{display:flex;align-items:center;gap:10px;flex-basis:calc(100% + 40px);
+    margin:10px -20px -14px;padding:9px 20px;background:var(--ks-bg);color:var(--ks-ink);
+    border-top:2px solid var(--ks-line);border-bottom:2px solid var(--ks-line);font-size:15px;font-weight:700;}
+  .ksbar button{margin-left:auto;min-height:38px;padding:6px 12px;background:#fff7ee;color:var(--ks-ink);
+    border:1.5px solid var(--ks-line);border-radius:2px;font-size:14px;font-weight:600;cursor:pointer;}
+  .btn.ks{background:var(--steel);text-align:left;padding:16px 18px;line-height:1.35;}
+  .btn.ks .s{display:block;font-size:13px;font-weight:400;margin-top:5px;color:rgba(243,242,242,.82);}
+  /* 職長の画面の下の入口ボタン */
+  .btn.ksgo{background:var(--ks-bg);color:var(--ks-ink);border:3px solid var(--ks-line);
+    text-align:left;padding:15px 17px;line-height:1.35;font-weight:700;}
+  .btn.ksgo .s{display:block;font-size:13.5px;font-weight:400;margin-top:5px;color:var(--ks-ink);}
+  .card.ksc.on{background:var(--steel-bg);border-color:var(--steel);}
+  .card .big .sub2{display:block;margin-top:4px;font-size:18px;font-weight:400;}
+  .nchip:disabled{opacity:.3;cursor:default;}
+  .ksnote{background:var(--ks-bg);border:1.5px solid var(--ks-line);border-left-width:5px;border-radius:2px;
+    padding:12px 14px;margin:0 0 18px;font-size:15.5px;font-weight:700;color:var(--ks-ink);line-height:1.6;}
+  .ksnow{color:var(--steel);font-weight:600;}
 
   /* ---- 部品 ---- */
   .step{font-size:13px;color:var(--muted);letter-spacing:.02em;margin-bottom:8px;}
@@ -312,7 +337,8 @@
 
 <!-- ===================== 入力 ①〜⑥ ===================== -->
 <div id="scStep1" class="screen">
-  <div class="bar-top"><button class="bk" onclick="leaveInput()">戻る</button><span class="tt" id="ttStep1">日報を送る</span></div>
+  <div class="bar-top"><button class="bk" onclick="leaveInput()">戻る</button><span class="tt" id="ttStep1">日報を送る</span>
+    <div class="ksbar"></div></div>
   <div class="wrap">
     <div class="sec">
       <div class="step">1 ── 日付</div>
@@ -321,11 +347,11 @@
       </button>
     </div>
     <div class="sec">
-      <div class="step">2 ── 職長名</div>
-      <button class="card" id="cForeman" onclick="openSheet('foreman')">
+      <div class="step" id="fLeadStep">2 ── 職長名</div>
+      <button class="card" id="cForeman" onclick="openLeadSheet()">
         <span class="rt">変える</span><span class="big" id="fForeman">タップして選ぶ</span>
       </button>
-      <div class="note">職長でない人が送るときは空欄にできます。</div>
+      <div class="note" id="fLeadNote">職長でない人が送るときは空欄にできます。</div>
     </div>
     <div class="sec">
       <div class="step">3 ── 工事</div>
@@ -338,7 +364,7 @@
     <div class="sec">
       <div class="step">4 ── 区分</div>
       <div class="kgrid" id="fKubun"></div>
-      <div class="note">注番に「工」「設」を足す必要はありません。工場・設計・緑化を選ぶと、下のメンバーがその常任メンバーだけになります。JFE・神戸製鋼・北吉田・その他は常任メンバーを決めていないので、下から選んでください。</div>
+      <div class="note">注番に「工」「設」を足す必要はありません。工場・設計・緑化を選ぶと、下のメンバーがその常任メンバーだけになります。JFE・神戸製鋼・北吉田・その他・大洲バイオマスは常任メンバーを決めていないので、下から選んでください。</div>
     </div>
     <div class="sec">
       <div class="step">5 ── メンバー <em id="fSelN"></em></div>
@@ -353,12 +379,14 @@
       <div class="note">いなければそのまま。休み・有給・欠勤・振休・特休を人ごとに選べます。</div>
     </div>
     <button class="btn" id="btnToTime" onclick="goStep2()">時間の入力へ　→</button>
+    <div class="note" id="fStepHint" style="color:var(--steel)"></div>
   </div>
 </div>
 
 <!-- ===================== 入力 ⑦⑧ ===================== -->
 <div id="scStep2" class="screen">
-  <div class="bar-top"><button class="bk" onclick="showScreen('scStep1')">戻る</button><span class="tt">7 ── 時間の入力</span></div>
+  <div class="bar-top"><button class="bk" onclick="showScreen('scStep1')">戻る</button><span class="tt">7 ── 時間の入力</span>
+    <div class="ksbar"></div></div>
   <div class="wrap">
     <div class="sec">
       <div class="step">全員分の時間</div>
@@ -386,11 +414,13 @@
 
 <!-- ===================== 送信前の確認 ===================== -->
 <div id="scConfirm" class="screen">
-  <div class="bar-top"><button class="bk" onclick="showScreen('scStep2')">戻る</button><span class="tt" id="ttCfm">送信前の確認</span></div>
+  <div class="bar-top"><button class="bk" onclick="showScreen('scStep2')">戻る</button><span class="tt" id="ttCfm">送信前の確認</span>
+    <div class="ksbar"></div></div>
   <div class="wrap">
     <div class="note" style="margin-top:0" id="cfmLead">この内容で送ります</div>
     <h1 class="big" style="font-size:30px" id="cfmDate"></h1>
     <dl class="cfm" id="cfmBox" style="margin-top:22px"></dl>
+    <div id="cfmKs"></div>
     <div class="cfmtot"><span class="l" id="cfmPeople"></span><span class="v" id="cfmTotal"></span></div>
     <div id="cfmRows"></div>
     <div id="cfmWarn" style="margin-top:16px"></div>
@@ -458,7 +488,26 @@
   <h2>職長を選ぶ</h2>
   <div id="shForemanList"></div>
   <button class="btn d" style="margin-top:12px" onclick="clearForeman()">空欄にする（職長なしで送る）</button>
+  <button class="btn ksgo" style="margin-top:16px" onclick="enterKs()">JFE・神戸製鋼・大洲バイオマスの現場
+    <span class="s">職長のかわりに、監督（1人）と指揮者（1人か2人）をえらびます</span></button>
   <button class="btn o sm" style="margin-top:10px" onclick="closeSheet()">閉じる</button>
+</div>
+
+<!-- 監督・指揮者をえらぶ（監督・指揮者モードのとき、職長のかわり） -->
+<div class="sheet" id="shKs">
+  <h2>監督・指揮者をえらぶ</h2>
+  <div id="ksList"></div>
+  <button class="btn d" id="ksAllBtn" style="margin-top:14px;text-align:center" onclick="toggleKsAll()"></button>
+  <button class="btn" style="margin-top:12px" onclick="closeSheet()">これで決める</button>
+</div>
+
+<!-- ふつうのモードのまま、3つの現場の区分をえらんだとき -->
+<div class="sheet" id="shKsAsk">
+  <h2>監督・指揮者の現場ではないですか？</h2>
+  <div class="note" style="margin-top:0;margin-bottom:14px;font-size:15px" id="ksAskTx"></div>
+  <button class="btn ks" onclick="ksAskYes()">監督・指揮者で入れなおす
+    <span class="s">工事と区分はそのまま。監督・指揮者をえらぶ画面へ進みます</span></button>
+  <button class="btn o sm" style="margin-top:10px" onclick="ksAskNo()">このまま職長で送る</button>
 </div>
 
 <div class="sheet" id="shJob">
@@ -574,7 +623,9 @@ const ALL_KINDS  = MAIN_KINDS.concat(MORE_KINDS);
 const PAPER_KINDS = ["平日工場","平日現場","休日工場","休日現場","工場残業","現場残業","移動行き","移動帰り","早出","深夜","突発"];
 const OT_KINDS   = ["工場残業","現場残業","早出","深夜"];
 const OFF_REASONS = ["休み","有給","欠勤","振休","特休"];
-const KUBUN = ["現場","松前工場","伊予工場","東方工場","東レ常駐","設計","緑化","JFE","神戸製鋼","北吉田","その他"];
+const KUBUN = ["現場","松前工場","伊予工場","東方工場","東レ常駐","設計","緑化","JFE","神戸製鋼","北吉田","その他","大洲バイオマス"];
+/* 監督・指揮者の手当がつく現場（職長はいない）。監督・指揮者モードでは、区分はこの3つだけ出す */
+const KS_KUBUN = ["JFE","神戸製鋼","大洲バイオマス"];
 const CHECKS = ["出張","夜勤"];          /* 全員一律。遅刻・早退は人ごとに入れる */
 const MINUS_KINDS = ["遅刻","早退"];      /* 引く時間。人ごとのテンキーで入れる */
 const WD = ["日","月","火","水","木","金","土"];
@@ -606,7 +657,10 @@ let S = {
   mode:"new", editBatch:null, editYm:null, editAt:"", editB:null, orig:null,
   /* 直しているとき、その日報を最初に送った人。空なら今の端末の名前を入れる */
   sentBy:"",
-  delB:null, flash:""
+  delB:null, flash:"",
+  /* 監督・指揮者モード。kan＝監督、shiki＝指揮者（1〜2人）、ksAuto＝そのために自動でメンバーに入れた人。
+     ksAsked＝「監督・指揮者の現場ではないですか？」に「このまま職長で送る」と答えた。ksAll＝○の無い人も出す */
+  ks:false, kan:null, shiki:[], ksAuto:[], ksAsked:false, ksAll:false
 };
 
 /* この端末を使う人。確認アプリと同じ鍵を使う（同じ場所に置いてあるので共通） */
@@ -782,7 +836,12 @@ function showScreen(id){
 function goTop(){ S.flash=""; showScreen("scTop"); renderTop(); }
 function goSend(){ if(S.mode==="edit") resetInput(); S.flash=""; showScreen("scStep1"); renderAll(); }
 function goJobs(){ S.flash=""; showScreen("scJobs"); renderJobsPage(); }
-function goStep2(){ if(!canStep2()) return; showScreen("scStep2"); renderAll(); }
+function goStep2(){
+  if(!canStep2()) return;
+  /* 前の日報から区分が3つの現場のまま来ていることがあるので、ここでも聞く */
+  if(!S.ks && !S.ksAsked && KS_KUBUN.indexOf(S.kubun)>=0){ askKs(S.kubun, goStep2); return; }
+  showScreen("scStep2"); renderAll();
+}
 /* 入力画面から戻る。直している最中なら履歴へ戻す */
 function leaveInput(){
   if(S.mode==="edit"){ resetInput(); showScreen("scHist"); renderHist(); return; }
@@ -822,7 +881,7 @@ document.getElementById("meSearch").addEventListener("input", renderMeList);
 let openedSheet=null;
 function openSheet(name){
   const map={cal:"shCal",foreman:"shForeman",job:"shJob",member:"shMember",off:"shOff",pad:"shPad",
-             close:"shClose",del:"shDel",over:"shOver"};
+             close:"shClose",del:"shDel",over:"shOver",ks:"shKs",ksask:"shKsAsk"};
   const id=map[name]; if(!id) return;
   openedSheet=id;
   document.getElementById(id).classList.add("on");
@@ -832,6 +891,7 @@ function openSheet(name){
   if(name==="job"){ S.jobOwner=""; renderJobSheet(); }   /* 開くたびに担当のしぼり込みは外す */
   if(name==="member") renderMemberSheet();
   if(name==="off") renderOffSheet();
+  if(name==="ks") renderKsSheet();
 }
 function closeSheet(){
   if(openedSheet) document.getElementById(openedSheet).classList.remove("on");
@@ -864,6 +924,7 @@ function renderAll(){
   if(!ready) return;
   renderTop(); renderDate(); renderForeman(); renderJob(); renderKubun();
   renderMembers(); renderOff(); renderTimes(); renderPersons(); renderChecks(); renderStepBtns();
+  renderKsBar();
   if(document.getElementById("scJobs").classList.contains("on")) renderJobsPage();
   if(document.getElementById("scHist").classList.contains("on")) renderHist();
   document.getElementById("ttStep1").textContent=S.mode==="edit"?"送った日報を直す":"日報を送る";
@@ -909,10 +970,27 @@ function renderCal(){
 
 /* ---- 職長 ---- */
 function renderForeman(){
-  document.getElementById("fForeman").textContent=S.foreman||"職長なし（空欄のまま送る）";
-  document.getElementById("fForeman").className="big"+(S.foreman?"":" off");
-  document.getElementById("cForeman").classList.toggle("on",!!S.foreman);
+  const el=document.getElementById("fForeman"), card=document.getElementById("cForeman");
+  document.getElementById("fLeadStep").textContent=S.ks?"2 ── 監督・指揮者":"2 ── 職長名";
+  document.getElementById("fLeadNote").textContent=S.ks
+    ? "監督を1人、指揮者を1人か2人えらびます。えらんだ人は、メンバーに自動で入ります。"
+    : "職長でない人が送るときは空欄にできます。";
+  card.classList.toggle("ksc",S.ks);
+  if(S.ks){
+    const any=!!(S.kan||S.shiki.length);
+    el.innerHTML=any
+      ? "監督 "+esc(S.kan||"―")+'<span class="sub2">指揮者 '+esc(S.shiki.join("・")||"―")+'</span>'
+      : "タップしてえらぶ";
+    el.className="big"+(any?"":" off");
+    card.classList.toggle("on",!!(S.kan&&S.shiki.length));
+    return;
+  }
+  el.textContent=S.foreman||"職長なし（空欄のまま送る）";
+  el.className="big"+(S.foreman?"":" off");
+  card.classList.toggle("on",!!S.foreman);
 }
+/* ②を押したとき。監督・指揮者モードなら、職長のかわりに監督・指揮者をえらぶ */
+function openLeadSheet(){ openSheet(S.ks?"ks":"foreman"); }
 /* 職長は自社の人をいつも出す。協力会社の人は「協力会社の人から選ぶ」を押すと出る
    （ふだんの画面は今までどおりすっきり。協力会社の人が職長のときは最初から開いておく） */
 let foremanPartnerOpen=false;
@@ -967,6 +1045,119 @@ function renderForemanSheet(){
 function clearForeman(){
   if(S.foreman && S.foremanAuto) S.sel = S.sel.filter(x=>x!==S.foreman);
   S.foreman=null; S.foremanAuto=false; closeSheet(); renderAll();
+}
+
+/* ================== 監督・指揮者（JFE・神戸製鋼・大洲バイオマス） ==================
+   この3つの現場には職長がいない。監督（1人）と指揮者（1人か2人）に、人数に関係なく1日1回ずつ手当がつく。
+   このモードで送った日報は、全員の行に kan（監督）と shiki（指揮者の名前の並び）を入れ、f（職長）は空にする。
+   職長手当（人数で数える）は f が入った行しか数えないので、このモードの日報は入らない */
+const SHIKI_MAX = 2;
+/* Firebase は並びを {0:…,1:…} の形で返すことがあるので、いつも配列にしてから使う */
+function ksList(v){
+  if(Array.isArray(v)) return v.filter(Boolean);
+  if(v && typeof v==="object") return Object.keys(v).sort().map(k=>v[k]).filter(Boolean);
+  return v ? [String(v)] : [];
+}
+function ksNames(){ return (S.kan?[S.kan]:[]).concat(S.shiki); }
+function isKsPerson(n){ return S.ks && ksNames().indexOf(n)>=0; }
+function ksRoleOf(n){ return S.kan===n ? "監督" : "指揮者"; }
+function ksTx(){ return "監督 "+(S.kan||"―")+"・指揮者 "+(S.shiki.join("・")||"―"); }
+/* 監督・指揮者にした人を、メンバーに自動で入れる（休みの人は入れない） */
+function ksJoin(n){
+  if(S.sel.indexOf(n)>=0 || S.off.some(o=>o.name===n)) return;
+  S.sel=S.sel.concat([n]); S.ksAuto=S.ksAuto.concat([n]);
+}
+/* 監督・指揮者から外した人が「自動で入っただけ」なら、メンバーからも外す */
+function ksLeave(n){
+  if(ksNames().indexOf(n)>=0 || S.ksAuto.indexOf(n)<0) return;
+  S.sel=S.sel.filter(x=>x!==n); S.ksAuto=S.ksAuto.filter(x=>x!==n);
+}
+function enterKs(){
+  /* 職長が自動で入っていただけなら外す */
+  if(S.foreman && S.foremanAuto) S.sel=S.sel.filter(x=>x!==S.foreman);
+  S.foreman=null; S.foremanAuto=false;
+  S.ks=true; S.kan=null; S.shiki=[]; S.ksAuto=[]; S.ksAll=false;
+  /* 区分は3つの中からえらび直してもらう（3つのどれかなら、そのまま残す） */
+  if(KS_KUBUN.indexOf(S.kubun)<0) S.kubun="";
+  closeSheet(); renderAll(); openSheet("ks");
+}
+function exitKs(){
+  if((S.kan||S.shiki.length) &&
+     !confirm("ふつうの（職長の）日報に戻します。えらんだ監督・指揮者は外れます。")) return;
+  S.sel=S.sel.filter(n=>S.ksAuto.indexOf(n)<0);
+  S.ks=false; S.kan=null; S.shiki=[]; S.ksAuto=[]; S.ksAll=false;
+  S.ksAsked=true;   /* 自分でふつうに戻したので、もう聞かない */
+  if(!S.kubun) S.kubun="現場";
+  showScreen("scStep1"); renderAll();
+}
+function renderKsBar(){
+  document.querySelectorAll(".ksbar").forEach(el=>{
+    el.classList.toggle("on",S.ks);
+    el.innerHTML=S.ks?'<span>監督・指揮者モード</span><button onclick="exitKs()">ふつうに戻す</button>':"";
+  });
+}
+/* えらべる人。○（監督になれる／指揮者になれる）が付いた人だけ。「ほかの人も出す」なら全員。
+   今えらんでいる人は、○が無くてもいつも出す */
+function ksPool(flag){
+  const act=activeWorkers();
+  const names=(S.ksAll ? act : act.filter(w=>w[flag])).map(w=>w.name);
+  ksNames().forEach(n=>{ if(names.indexOf(n)<0) names.push(n); });
+  return [...new Set(names)].sort(byLen);
+}
+function renderKsSheet(){
+  const chip=(n,role)=>{
+    const on   = role==="kan" ? S.kan===n : S.shiki.indexOf(n)>=0;
+    const other= role==="kan" ? S.shiki.indexOf(n)>=0 : S.kan===n;   /* もう片方の役になっている */
+    const full = role==="shiki" && !on && S.shiki.length>=SHIKI_MAX;  /* 指揮者は2人まで */
+    return '<button class="nchip'+(on?" on":"")+'" data-r="'+role+'" data-n="'+esc(n)+'"'+
+      ((other||full)?" disabled":"")+'>'+esc(n)+'</button>';
+  };
+  const grid=(names,role,flagTx)=>names.length
+    ? '<div class="ngrid">'+names.map(n=>chip(n,role)).join("")+'</div>'
+    : '<div class="note" style="margin-top:0">'+flagTx+'の○が付いた人がいません。'+
+      '下の「ほかの人も出す（全員）」からえらんでください。</div>';
+  document.getElementById("ksList").innerHTML=
+    '<div class="lbl" style="margin-top:4px">監督（1人）'+
+      (S.kan?'　<span class="ksnow">'+esc(S.kan)+'</span>':'')+'</div>'+
+    grid(ksPool("kantoku"),"kan","監督")+
+    '<div class="lbl">指揮者（1人か2人）'+
+      (S.shiki.length?'　<span class="ksnow">'+S.shiki.map(esc).join("・")+'</span>':'')+'</div>'+
+    grid(ksPool("shikisha"),"shiki","指揮者")+
+    '<div class="note">同じ人を監督と指揮者の両方にはできません。指揮者は2人までです。'+
+      'えらんだ人は、メンバーに自動で入ります。</div>';
+  document.getElementById("ksAllBtn").textContent=S.ksAll?"○が付いた人だけにもどす":"ほかの人も出す（全員）";
+  document.querySelectorAll("#ksList .nchip").forEach(b=>{
+    b.onclick=()=>{
+      const n=b.dataset.n;
+      if(b.dataset.r==="kan"){
+        const prev=S.kan;
+        S.kan=(prev===n)?null:n;
+        if(prev) ksLeave(prev);
+        if(S.kan) ksJoin(S.kan);
+      } else if(S.shiki.indexOf(n)>=0){
+        S.shiki=S.shiki.filter(x=>x!==n); ksLeave(n);
+      } else if(S.shiki.length<SHIKI_MAX){
+        S.shiki=S.shiki.concat([n]); ksJoin(n);
+      }
+      renderKsSheet(); renderAll();
+    };
+  });
+}
+function toggleKsAll(){ S.ksAll=!S.ksAll; renderKsSheet(); }
+/* ふつうのモードのまま3つの現場をえらんだとき、押し忘れでないか聞く。
+   then＝「このまま職長で送る」のあとに続けること（時間の入力へ進むときなど） */
+let ksAskThen=null;
+function askKs(k, then){
+  ksAskThen=then||null;
+  document.getElementById("ksAskTx").textContent=
+    "「"+k+"」は、ふつうは職長ではなく、監督・指揮者で送る現場です。";
+  openSheet("ksask");
+}
+function ksAskYes(){ ksAskThen=null; enterKs(); }
+function ksAskNo(){
+  S.ksAsked=true; closeSheet();
+  const t=ksAskThen; ksAskThen=null;
+  if(t) t();
 }
 
 /* ---- 工事 ---- */
@@ -1050,7 +1241,8 @@ function commitNewJob(){
 
 /* ---- 区分 ---- */
 function renderKubun(){
-  document.getElementById("fKubun").innerHTML=KUBUN.map(k=>
+  /* 監督・指揮者モードでは、3つの現場だけ出す */
+  document.getElementById("fKubun").innerHTML=(S.ks?KS_KUBUN:KUBUN).map(k=>
     '<button class="chip'+(S.kubun===k?" on":"")+'" data-k="'+esc(k)+'">'+esc(k)+'</button>').join("");
   document.querySelectorAll("#fKubun .chip").forEach(b=>{
     b.onclick=()=>{
@@ -1059,6 +1251,8 @@ function renderKubun(){
       /* 直しているときは、区分を直してもメンバーを入れ替えない */
       if(S.mode!=="edit") applyTeam();
       renderAll();
+      /* ふつうのモードのまま3つの現場をえらんだら、押し忘れでないか聞く */
+      if(!S.ks && !S.ksAsked && KS_KUBUN.indexOf(S.kubun)>=0) askKs(S.kubun);
     };
   });
 }
@@ -1071,6 +1265,10 @@ function applyTeam(){
        && !S.off.some(o=>o.name===S.foreman)){
       S.sel=S.sel.concat([S.foreman]);
     }
+    // 監督・指揮者も、班を切り替えても残す
+    if(S.ks) ksNames().forEach(n=>{
+      if(S.sel.indexOf(n)<0 && !S.off.some(o=>o.name===n)) S.sel=S.sel.concat([n]);
+    });
   }
 }
 
@@ -1148,7 +1346,14 @@ function renderMembers(){
     ? S.kubun+"の常任メンバーを「自社」に出しています。ここに出ていない人は「他の人を追加」から。"
     : "工場・設計・緑化の常任メンバーは隠しています。「他の人を追加」から呼べます。";
 }
+/* 監督・指揮者はメンバーから外したり、休みにしたりできない（えらび直してもらう） */
+function ksLocked(n){
+  if(!isKsPerson(n)) return false;
+  alert(n+"さんは"+ksRoleOf(n)+"なので、メンバーから外せません。外すときは、監督・指揮者をえらび直してください。");
+  return true;
+}
 function toggleSel(n){
+  if(S.sel.indexOf(n)>=0 && ksLocked(n)) return;
   if(S.sel.indexOf(n)>=0){
     S.sel=S.sel.filter(x=>x!==n);
     if(n===S.foreman) S.foremanAuto=false;   // 職長を手で外した＝事務所作業など
@@ -1278,6 +1483,7 @@ function renderOffSheet(){
   document.querySelectorAll("#offCandidates .nchip").forEach(b=>{
     b.onclick=()=>{ const n=b.dataset.n;
       if(S.off.some(o=>o.name===n)) S.off=S.off.filter(o=>o.name!==n);
+      else if(ksLocked(n)) return;
       else { S.off.push({name:n,reason:"休み"}); S.sel=S.sel.filter(x=>x!==n);
              if(n===S.foreman) S.foremanAuto=false; }
       renderOffSheet(); renderAll(); };
@@ -1334,10 +1540,16 @@ function renderChecks(){
 
 function renderStepBtns(){
   document.getElementById("btnToTime").disabled=!canStep2();
+  /* 監督・指揮者モードで、まだ足りないもの */
+  const miss=!S.ks?[]:[!S.kan&&"監督", !S.shiki.length&&"指揮者",
+    KS_KUBUN.indexOf(S.kubun)<0&&"区分（"+KS_KUBUN.join("・")+"）"].filter(Boolean);
+  document.getElementById("fStepHint").textContent=miss.length?miss.join("・")+"をえらんでください":"";
   const g=S.sel.reduce((a,n)=>a+totalOf(hoursFor(n)),0);
   document.getElementById("fSum").textContent="合計 "+f1(g)+"時間・"+S.sel.length+"人";
 }
 function canStep2(){
+  /* 監督・指揮者モードは、監督1人・指揮者1人以上・3つの現場のどれか、がそろってから */
+  if(S.ks && !(S.kan && S.shiki.length && KS_KUBUN.indexOf(S.kubun)>=0)) return false;
   return !!((S.job||S.jobFree) && (S.sel.length || (S.mode==="edit" && S.off.length)));
 }
 function canSend(){
@@ -1436,13 +1648,18 @@ function goConfirm(){
   document.getElementById("cfmBox").innerHTML=
     "<dt>工事</dt><dd>"+(S.job?'<span class="no">'+esc(S.job)+'</span><br>':'')+esc(jobName)+"</dd>"+
     "<dt>区分</dt><dd>"+esc(S.kubun)+"</dd>"+
-    "<dt>職長</dt><dd>"+esc(S.foreman||"なし（空欄）")+"</dd>"+
+    (S.ks
+      ? "<dt>監督</dt><dd>"+esc(S.kan||"")+"</dd><dt>指揮者</dt><dd>"+esc(S.shiki.join("・"))+"</dd>"
+      : "<dt>職長</dt><dd>"+esc(S.foreman||"なし（空欄）")+"</dd>")+
     "<dt>休み</dt><dd>"+(S.off.length?esc(S.off.map(o=>o.name+"（"+o.reason+"）").join("・")):"なし")+"</dd>"+
     "<dt>チェック</dt><dd>"+esc(chk)+"</dd>"+
     "<dt>遅刻・早退</dt><dd>"+(mn.length
       ? esc(mn.map(n=>n+"（"+[S.late[n]?"遅刻 −"+f1(S.late[n]):"",S.early[n]?"早退 −"+f1(S.early[n]):""]
           .filter(Boolean).join("・")+"）").join("　"))
       : "なし")+"</dd>";
+  /* 監督・指揮者の手当。人数に関係なく、1日1回ずつ */
+  document.getElementById("cfmKs").innerHTML=S.ks
+    ? '<div class="ksnote">'+esc(ksTx())+'に1日1回ずつ手当がつきます</div>' : "";
   const grand=S.sel.reduce((a,n)=>a+netFor(n),0);
   document.getElementById("cfmPeople").textContent=S.sel.length+"人の時間";
   document.getElementById("cfmTotal").textContent="合計 "+f1(grand);
@@ -1473,26 +1690,29 @@ function buildRows(batch, stamp){
   const jobName=S.job?(JOBS.find(j=>j.no===S.job)||{}).name:S.jobFree;
   /* この送信だけで数えた職長手当（工数）。記録として全行に同じ値を持たせる。
      手で直す欄はなくした。月の職長手当は、管理画面・確認アプリが日ごとに数え直すので、この値は使わない */
-  const fa=S.foreman ? autoAllow() : 0;
+  const fa=(!S.ks && S.foreman) ? autoAllow() : 0;
+  /* 監督・指揮者モードは職長を空にして、監督・指揮者の名前を全員の行に持たせる（職長名と同じやり方） */
+  const f=S.ks ? "" : (S.foreman||"");
+  const ks=S.ks ? {kan:S.kan||"", shiki:S.shiki.slice()} : {};
   /* 誰が送ったか（by）。職長欄（f）とは別。送信履歴はこれで拾う。
      直しているときは、最初に送った人をそのまま残す */
   const by=(S.mode==="edit" ? (S.sentBy||"") : "") || ME || "";
   const rows=[];
   S.sel.forEach(n=>{
     const w=WORKERS.find(x=>x.name===n);
-    rows.push({d:S.date,n:n,k:(w?w.kubun:""),shozoku:(w?w.shozoku:""),
-      no:S.job||"",j:jobName||"",kubun:S.kubun,f:S.foreman||"",by:by,
+    rows.push(Object.assign({d:S.date,n:n,k:(w?w.kubun:""),shozoku:(w?w.shozoku:""),
+      no:S.job||"",j:jobName||"",kubun:S.kubun,f:f,by:by,
       h:Object.assign({},hoursFor(n)),off:0,offReason:"",
       s:S.checks["出張"]?1:0,y:S.checks["夜勤"]?1:0,
       late:lateFor(n),early:earlyFor(n),
-      fa:fa,batch:batch,at:stamp});
+      fa:fa,batch:batch,at:stamp}, ks));
   });
   S.off.forEach(o=>{
     const w=WORKERS.find(x=>x.name===o.name);
-    rows.push({d:S.date,n:o.name,k:(w?w.kubun:""),shozoku:(w?w.shozoku:""),
-      no:S.job||"",j:jobName||"",kubun:S.kubun,f:S.foreman||"",by:by,
+    rows.push(Object.assign({d:S.date,n:o.name,k:(w?w.kubun:""),shozoku:(w?w.shozoku:""),
+      no:S.job||"",j:jobName||"",kubun:S.kubun,f:f,by:by,
       h:{},off:1,offReason:o.reason,s:0,y:0,late:0,early:0,
-      fa:fa,batch:batch,at:stamp});
+      fa:fa,batch:batch,at:stamp}, ks));
   });
   return rows;
 }
@@ -1571,7 +1791,8 @@ function doSend(){
       (S.job?'<span style="font-family:ui-monospace,monospace;font-weight:600;color:var(--green)">'+esc(S.job)+'</span> ':'')+esc(jobName||"");
     const g=S.sel.reduce((a,n)=>a+netFor(n),0);
     document.getElementById("doneCnt").textContent=
-      S.sel.length+"人 ／ 合計 "+f1(g)+"時間"+(S.off.length?" ／ 休み "+S.off.length+"人":"");
+      S.sel.length+"人 ／ 合計 "+f1(g)+"時間"+(S.off.length?" ／ 休み "+S.off.length+"人":"")+
+      (S.ks?" ／ "+ksTx():"");
     btn.disabled=false; btn.textContent="送信する";
     showScreen("scDone");
   }).catch(e=>{
@@ -1582,6 +1803,8 @@ function doSend(){
 function continueNext(){
   S.job=null; S.jobFree=null; S.all={}; S.ovr={}; S.more=false;
   S.checks={出張:false,夜勤:false}; S.late={}; S.early={};
+  /* 監督・指揮者はそのまま。次の1件はまた現場が変わるかもしれないので、押し忘れの確認はやり直す */
+  S.ksAsked=false;
   showScreen("scStep1"); renderAll();
 }
 /* 入力をまっさらに戻す（直している最中のしるしも消す） */
@@ -1591,6 +1814,8 @@ function resetInput(){
   S.date=todayStr();
   S.job=null; S.jobFree=null; S.all={}; S.ovr={}; S.sel=[]; S.off=[]; S.guests=[]; S.more=false;
   S.checks={出張:false,夜勤:false}; S.late={}; S.early={};
+  S.ks=false; S.kan=null; S.shiki=[]; S.ksAuto=[]; S.ksAsked=false; S.ksAll=false;
+  if(!S.kubun) S.kubun="現場";
   applyTeam();
 }
 function finishSend(){ resetInput(); goTop(); }
@@ -1650,6 +1875,7 @@ function renderHist(){
       '<div class="nm">'+(r.no?'<span class="no">'+esc(r.no)+'</span> ':'')+esc(r.j||"")+'</div>'+
       '<div class="mt">'+esc(r.kubun||"")+' ／ '+work.length+'人'+
         (offs.length?' ／ 休み '+offs.length+'人':'')+
+        (r.kan?'<br>監督 '+esc(r.kan)+'・指揮者 '+esc(ksList(r.shiki).join("・")):'')+
         (work.length?'<br>'+esc(work.map(x=>x.n).join("・")):'')+
         (offs.length?'<br>休み：'+esc(offs.map(x=>x.n).join("・")):'')+'</div>'+
       '<div class="acts">'+
@@ -1692,6 +1918,10 @@ function loadBatch(b){
   });
   S.checks={出張:!!rc.s,夜勤:!!rc.y};
   S.more=work.some(r=>MORE_KINDS.some(k=>(r.h||{})[k]));
+  /* 監督・指揮者モードで送った日報なら、そのモードで開く */
+  S.ks=!!r0.kan; S.kan=r0.kan||null; S.shiki=ksList(r0.shiki); S.ksAuto=[]; S.ksAll=false;
+  if(S.ks){ S.foreman=null; S.foremanAuto=false; }
+  S.ksAsked=true;   /* 送った日報を開いたときは、押し忘れの確認はしない */
 }
 function startEdit(i){
   const b=HIST[i]; if(!b) return;
@@ -1722,10 +1952,11 @@ function stateSnap(){
   const jobName=S.job?(JOBS.find(j=>j.no===S.job)||{}).name:S.jobFree;
   const per={};
   S.sel.forEach(n=>{ per[n]=hKey(hoursFor(n))+"|遅"+r1(lateFor(n))+"|早"+r1(earlyFor(n)); });
-  return { d:S.date, no:S.job||"", j:jobName||"", kubun:S.kubun, f:S.foreman||"",
+  return { d:S.date, no:S.job||"", j:jobName||"", kubun:S.kubun, f:S.ks?"":(S.foreman||""),
+    kan:S.ks?(S.kan||""):"", shiki:S.ks?S.shiki.join("・"):"",
     sel:S.sel.slice().sort(), off:S.off.map(o=>o.name+"（"+o.reason+"）").sort(),
     s:!!S.checks["出張"], y:!!S.checks["夜勤"], per:per,
-    fa:r1(S.foreman?autoAllow():0) };
+    fa:r1((!S.ks&&S.foreman)?autoAllow():0) };
 }
 function rowsSnap(rows){
   const work=rows.filter(r=>!r.off), offs=rows.filter(r=>r.off);
@@ -1733,6 +1964,7 @@ function rowsSnap(rows){
   work.forEach(r=>{ per[r.n]=hKey(r.h)+"|遅"+r1(r.late||0)+"|早"+r1(r.early||0); });
   const fa=rows.map(r=>r.fa).find(v=>v!==undefined&&v!==null&&v!=="");
   return { d:r0.d, no:r0.no||"", j:r0.j||"", kubun:r0.kubun||"", f:r0.f||"",
+    kan:r0.kan||"", shiki:ksList(r0.shiki).join("・"),
     sel:work.map(r=>r.n).sort(), off:offs.map(r=>r.n+"（"+(r.offReason||"休み")+"）").sort(),
     s:!!rc.s, y:!!rc.y, per:per, fa:r1(Number(fa)||0) };
 }
@@ -1746,6 +1978,8 @@ function diffText(){
   if(a.j!==b.j)         c.push("件名 "+(a.j||"―")+" → "+(b.j||"―"));
   if(a.kubun!==b.kubun) c.push("区分 "+(a.kubun||"―")+" → "+(b.kubun||"―"));
   if(a.f!==b.f)         c.push("職長 "+(a.f||"―")+" → "+(b.f||"―"));
+  if(a.kan!==b.kan)     c.push("監督 "+(a.kan||"―")+" → "+(b.kan||"―"));
+  if(a.shiki!==b.shiki) c.push("指揮者 "+(a.shiki||"―")+" → "+(b.shiki||"―"));
   const add=b.sel.filter(n=>a.sel.indexOf(n)<0), rm=a.sel.filter(n=>b.sel.indexOf(n)<0);
   if(add.length) c.push("メンバー追加 "+add.join("・"));
   if(rm.length)  c.push("メンバー削除 "+rm.join("・"));
@@ -1818,7 +2052,9 @@ function doDelete(){
   const ym=String(r.d).slice(0,7), now=stampNow();
   const why=(document.getElementById("dlWhy").value||"").trim();
   const what="送信アプリから削除　"+dShort(r.d)+"　"+(r.no?r.no+" ":"")+(r.j||"")+
-    "　／　"+(r.kubun||"")+"　職長 "+(r.f||"―")+"　／　"+work.length+"人・合計 "+
+    "　／　"+(r.kubun||"")+
+    (r.kan ? "　監督 "+r.kan+"・指揮者 "+ksList(r.shiki).join("・") : "　職長 "+(r.f||"―"))+
+    "　／　"+work.length+"人・合計 "+
     f1(work.reduce((a,x)=>a+netOf(x),0))+"時間"+
     (b.rows.length>work.length?"／休み "+(b.rows.length-work.length)+"人":"");
   db.ref("nippo/"+ym+"/rows").once("value").then(snap=>{

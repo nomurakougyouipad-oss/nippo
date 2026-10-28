@@ -223,6 +223,7 @@
       <div class="sec-lbl">日ごとの記録</div>
       <div id="vDays"></div>
       <div class="paybox" id="vPay"></div>
+      <div class="paybox" id="vKs"></div>
       <div class="note">ここは自分の記録だけです。数字が違うときは職長か事務所に言ってください。</div>
     </div>
     <div id="vSent" style="display:none">
@@ -331,6 +332,44 @@ function leadAgg(rows){
   });
 }
 function allowTx(v){ return (Math.round((v||0)*10)/10).toFixed(1); }
+
+/* ---- 監督・指揮者の手当（JFE・神戸製鋼・大洲バイオマス） ----
+   管理画面（kanri.html）の ksList・ksAgg と同じ数え方。直すときは両方そろえること。
+   日報アプリの「監督・指揮者モード」で送った日報（行に kan が入っている）だけを数える。
+   監督・指揮者に、人数に関係なく1日1回ずつ。同じ人・同じ日・同じ役割が2枚に入っていても1回 */
+/* Firebase は並びを {0:…,1:…} の形で返すことがあるので、いつも配列にしてから使う */
+function ksList(v){
+  if(Array.isArray(v)) return v.filter(Boolean);
+  if(v && typeof v==="object") return Object.keys(v).sort().map(k=>v[k]).filter(Boolean);
+  return v ? [String(v)] : [];
+}
+/* 人ごとのまとまり。返すもの：[{n, kan:監督の回数, shiki:指揮者の回数,
+     items:[{d, role, kubun:[], jobs:[], kan:[], shiki:[]}]}]（items は日付順、同じ日は監督が先） */
+function ksAgg(rows){
+  const by={}, seen={};
+  const add=(arr, v)=>{ if(v && arr.indexOf(v)<0) arr.push(v); };
+  (rows||[]).forEach(r=>{
+    if(!r.kan || r.off) return;
+    const sh=ksList(r.shiki);
+    [[r.kan,"監督"]].concat(sh.map(s=>[s,"指揮者"])).forEach(x=>{
+      const n=x[0], role=x[1], key=n+"|"+r.d+"|"+role;
+      const P=by[n]=by[n]||{n:n, kan:0, shiki:0, items:[]};
+      let it=seen[key];
+      if(!it){
+        it=seen[key]={d:r.d, role:role, kubun:[], jobs:[], kan:[], shiki:[]};
+        P.items.push(it);
+        if(role==="監督") P.kan++; else P.shiki++;
+      }
+      add(it.kubun, r.kubun); add(it.jobs, r.j||r.no||""); add(it.kan, r.kan);
+      sh.forEach(s=>add(it.shiki, s));
+    });
+  });
+  return Object.keys(by).sort(byLen).map(n=>{
+    by[n].items.sort((a,b)=>String(a.d).localeCompare(String(b.d)) ||
+      (a.role==="監督"?0:1)-(b.role==="監督"?0:1));
+    return by[n];
+  });
+}
 
 /* 同じ送信のかたまり。batch がない古い行は 日付＋工事＋職長 でまとめる */
 function bKey(r){ return r.batch || (r.d+"|"+jobKey(r)+"|"+(r.f||"")); }
@@ -632,7 +671,8 @@ function renderView(){
       '<div class="j">'+(r.no?'<span class="no">'+esc(r.no)+'</span>':'')+esc(r.j||"")+'</div>'+
       '<div class="brk">'+(r.off?'<span class="mn">'+esc(r.offReason||"休み")+'</span>':brkHtml(r))+'</div>'+
       (tags.length?'<div class="tgs">'+tags.join("")+'</div>':'')+
-      (r.f?'<div class="h">職長 '+esc(r.f)+'</div>':'')+
+      (r.kan?'<div class="h">監督 '+esc(r.kan)+'・指揮者 '+esc(ksList(r.shiki).join("・"))+'</div>'
+            :r.f?'<div class="h">職長 '+esc(r.f)+'</div>':'')+
       (mt.length?'<div class="mates">一緒に行った人：<b>'+mt.map(esc).join("、")+'</b></div>':'')+
     '</div>';
   }).join(""):'<div class="empty">この月の記録はありません</div>';
@@ -643,11 +683,26 @@ function renderView(){
   const payRows=payDays.map(D=>
     '<div class="payrow"><span>'+dShort(D.d)+'　'+esc(D.jobs.join("／"))+'</span>'+
       '<span class="'+(D.sum?"":"x")+'">'+(D.sum?allowTx(D.sum):"対象外")+'</span></div>').join("");
+  document.getElementById("vPay").style.display=hasSent?"block":"none";   /* 空の箱の線だけが残らないように */
   document.getElementById("vPay").innerHTML=hasSent?
     '<div class="step">職長手当（'+(V.month||"").replace("-","年")+'月）</div>'+
     '<div class="n">'+allowTx(ld ? ld.sum : 0)+'<span>工数 ／ 日報から自動で計算</span></div>'+
     '<div style="margin-top:12px">'+payRows+'</div>'+
     '<div class="note">自分を含めて、1人1日ごとに数えます。同じ日に何件か出していても、同じ人の時間は足してから数えます。実働（平日・休日の工場現場から遅刻・早退を引いた分）が4時間より多ければ1.0、4時間までなら0.5です。実働がない人（移動・残業だけ）、役員7名、休みの人は数えません。手で直した数は使いません。</div>':"";
+
+  /* 監督・指揮者（JFE・神戸製鋼・大洲バイオマス）。職長手当とは別。回数が0の人には出さない */
+  const ks=ksAgg(rows).find(x=>x.n===V.name);
+  document.getElementById("vKs").style.display=ks?"block":"none";
+  document.getElementById("vKs").innerHTML=ks?
+    '<div class="step">監督・指揮者（'+(V.month||"").replace("-","年")+'月）</div>'+
+    '<div class="figs2">'+
+      '<div class="f"><div class="l">監督</div><div class="v'+(ks.kan?"":" z")+'">'+ks.kan+'<span>回</span></div></div>'+
+      '<div class="f"><div class="l">指揮者</div><div class="v'+(ks.shiki?"":" z")+'">'+ks.shiki+'<span>回</span></div></div>'+
+    '</div>'+
+    '<div style="margin-top:12px">'+ks.items.slice().reverse().map(it=>
+      '<div class="payrow"><span>'+dShort(it.d)+'　'+esc(it.kubun.join("・"))+'　'+esc(it.jobs.join("／"))+'</span>'+
+      '<span style="flex:none;white-space:nowrap;font-weight:600">'+esc(it.role)+'</span></div>').join("")+'</div>'+
+    '<div class="note">JFE・神戸製鋼・大洲バイオマスの現場で、監督・指揮者になった日です。人数に関係なく、1日1回ずつ数えます（同じ日に2枚あっても1回）。</div>':"";
 
   /* 出した日報（送信ごと）。職長手当は日ごとに数えるので、ここには出さない */
   const bt={};
