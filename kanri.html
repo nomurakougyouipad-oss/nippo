@@ -375,8 +375,17 @@
     #ldPrint .ld-sheet:last-child{break-after:auto;}
     #ldPrint .ld-pt{font-size:11px;color:var(--faint);letter-spacing:.1em;margin-bottom:4px;}
     #ldPrint .figs .f .v.big{font-size:30px;}
-    #ldPrint .ld-days{grid-template-columns:1fr 1fr;gap:8px;}
+    /* 右の列の外枠が紙の端で切れないよう、左右に少しすき間をとる */
+    #ldPrint .ld-sheet{padding:0 3px;}
+    #ldPrint .ld-days{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
     #ldPrint .ld-day th,#ldPrint .ld-day td{padding:4px 10px;}
+    /* 紙だと薄い線と灰色の字が見えにくいので、印刷のときだけ濃くする（画面はそのまま） */
+    #ldPrint .ld-hd{border-bottom:1px solid #555;}
+    #ldPrint .ld-day{border:1.5px solid #333;}
+    #ldPrint .ld-day .dh{border-bottom:1px solid #555;}
+    #ldPrint .ld-day thead th{border-bottom:1px solid #555;color:#555;}
+    #ldPrint .ld-day tbody tr + tr td{border-top:1px solid #555;}
+    #ldPrint .ld-day .zz,#ldPrint .ld-day .yk{color:#555;}
   }
 </style>
 </head>
