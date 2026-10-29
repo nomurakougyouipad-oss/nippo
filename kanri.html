@@ -266,8 +266,17 @@
   .mtop .cnt{margin-left:auto;font-size:13px;color:var(--muted);white-space:nowrap;}
   .wlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;}
   /* 1人1枚。左（名前など）を押すと編集、右の2つは「監督になれる」「指揮者になれる」の○ */
-  .wrow{display:flex;align-items:stretch;width:100%;
+  .wrow{display:flex;flex-wrap:wrap;align-items:stretch;width:100%;
     background:var(--card);border:1px solid var(--line);border-radius:2px;}
+  /* 3つのアプリを開いた日（送信・確認・かんたん）。カードの下に3つ並べる */
+  .wseen{flex-basis:100%;display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line);}
+  .wseen > div{min-height:40px;padding:5px 10px 6px;border-left:1px solid var(--line);}
+  .wseen > div:first-child{border-left:none;}
+  .wseen .l{font-size:11px;color:var(--faint);}
+  .wseen .v{font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .wseen .v.no{color:var(--mag-d);font-weight:400;}
+  .wseen .ic{margin-left:5px;padding:0 4px;font-size:10.5px;font-weight:600;color:var(--green);
+    border:1px solid var(--green);border-radius:2px;vertical-align:1px;}
   .wrow:hover{border-color:var(--green);}
   .wrow.off{opacity:.5;}
   .wrow .wmain{flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px;text-align:left;
@@ -577,6 +586,9 @@
       <div class="note">右の「監督になれる」「指揮者になれる」は、押すと○が付く・消えます。
         日報アプリでJFE・神戸製鋼・大洲バイオマスの監督・指揮者をえらぶとき、○が付いた人だけが出ます
         （○の無い人も「ほかの人も出す（全員）」からえらべます）。</div>
+      <div class="note">カードの下の「送信・確認・かんたん」は、その人が日報アプリ・確認アプリ・かんたん日報を最後に開いた日です。
+        一度も開いていなければ「まだ」、ホーム画面のアイコンから開いたことがあれば「アイコン」と出ます。
+        送信は職長（日報の職長の欄に入ったことがある人・送信アプリから送ったことがある人）だけ、かんたんは常駐先が付いた人だけ出します。</div>
       <div class="note">ここの名簿は、日報アプリ（送信）と確認アプリでも使われます。
         「隠す」にすると、これからの日報で選べなくなり、朝のチェックの「日報が届いていない人」にも出なくなります。
         <b>過去の日報と集計はそのまま残ります。</b>
@@ -688,6 +700,9 @@ let FREEDONE = [], regFreeMonth = null, regFreeGroups = [], mfFixed = false, mfI
 let fKubun = "", pKubun = "", jKubun = "", pSort = "name";
 /* 常駐タブ。JMATOME＝「1人がまとめて送る」常駐先（master/jochMatome）、joFilter＝しぼり込み中の常駐先（空ならすべて） */
 let JMATOME = {}, joFilter = "";
+/* 3つのアプリ（送信・確認・かんたん日報）を開いた日。master/seen/{名簿のキー}/{nippo|kakunin|jochu}
+   = {d:最後に開いた日, icon:ホーム画面のアイコンから開いた日}。アプリのほうが書く。ここは読むだけ */
+let SEEN = {};
 const jClosed = new Set();   // 工事別工数で閉じている頭2文字（表示だけ。保存しない）
 
 /* ============ 小道具 ============ */
@@ -965,6 +980,7 @@ function boot(){
   /* 「注番なしで確定」にした件名。日報は消さず、注番なしのリストから外すだけ */
   db.ref("master/freeDone").on("value", s=>{ FREEDONE = (s.val()||[]).filter(Boolean); render(); });
   db.ref("master/jochMatome").on("value", s=>{ JMATOME = s.val()||{}; render(); });
+  db.ref("master/seen").on("value", s=>{ SEEN = s.val()||{}; render(); });
   /* 修正履歴は日報管理でしか使いません */
   if(MODE==="full")
     db.ref("log").on("value", s=>{ const v=s.val()||{}; LOG=Object.keys(v).map(k=>v[k]); render(); });
@@ -3092,6 +3108,7 @@ function renderMember(){
   }
   if(!hit.length){ list.innerHTML = '<div class="mnone">見つかりませんでした</div>'; return; }
 
+  const fs = seenForemen();
   list.innerHTML = hit.map(w=>
     '<div class="wrow'+(w.active===false ? " off" : "")+'">'+
       '<button class="wmain" data-w="'+esc(w._key)+'">'+
@@ -3105,10 +3122,39 @@ function renderMember(){
       '<div class="wks">'+W_FLAGS.map(f=>
         '<button class="wflag'+(w[f.k]?" on":"")+'" data-fw="'+esc(w._key)+'" data-fk="'+f.k+'">'+
           (w[f.k]?"○ ":"　")+f.l+'</button>').join("")+'</div>'+
+      seenRow(w, fs)+
     '</div>').join("");
 
   list.querySelectorAll("[data-w]").forEach(b=>{ b.onclick = ()=>openMem(b.dataset.w); });
   list.querySelectorAll("[data-fw]").forEach(b=>{ b.onclick = ()=>toggleWorkerFlag(b.dataset.fw, b.dataset.fk); });
+}
+/* ---- 3つのアプリを開いた日（送信・確認・かんたん） ----
+   名簿には「職長」のしるしが無いので、送信の列を出す人（職長）は日報から決める：
+   職長の欄（f）に名前が入ったことがある人と、送信アプリから送ったことがある人（by。かんたん日報の行はのぞく）。
+   送信アプリを開いたことがある人も出す */
+function seenForemen(){
+  const s = new Set();
+  Object.keys(ALLDATA).forEach(m=>rowsOf(m).forEach(r=>{
+    if(r.f) s.add(r.f);
+    if(r.by && r.src!=="joch") s.add(r.by);
+  }));
+  return s;
+}
+/* 1つのアプリの欄。開いた日、一度も開いていなければ「まだ」。ホーム画面から開いていれば「アイコン」 */
+function seenCell(label, s, show){
+  if(!show) return '<div></div>';
+  return '<div><div class="l">'+label+'</div>'+
+    (s && s.d
+      ? '<div class="v">'+esc(dOnly(s.d))+(s.icon ? '<span class="ic">アイコン</span>' : '')+'</div>'
+      : '<div class="v no">まだ</div>')+'</div>';
+}
+/* 送信の列は職長だけ、かんたんの列は常駐先が付いた人だけ（ほかは空欄） */
+function seenRow(w, fs){
+  const sv = SEEN[w._key] || {};
+  return '<div class="wseen">'+
+    seenCell("送信", sv.nippo, fs.has(w.name) || !!sv.nippo)+
+    seenCell("確認", sv.kakunin, true)+
+    seenCell("かんたん", sv.jochu, !!w.joch)+'</div>';
 }
 /* ○を付ける・消す。名簿のその人の kantoku／shikisha だけを書き換える（消すときは項目ごと消す） */
 function toggleWorkerFlag(key, flag){

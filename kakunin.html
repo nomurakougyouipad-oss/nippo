@@ -260,7 +260,8 @@ const ALLOW_BORDER = 4;   /* 実働がこの時間以下なら 0.5 */
 /* 読み込みの途中でも画面を切り替えられるように、ここで決めておく */
 const SCREENS = ["scPick","scHome","scNames","scCo","scView"];
 
-let ALLDATA = {}, WORKERS = [];
+/* WRAW＝名簿をキーつきのまま持っておく（開いた日を書くとき、名前からキーをさがすため） */
+let ALLDATA = {}, WORKERS = [], WRAW = {};
 let V = { name:null, month:null, tab:"me", from:"home", co:null, coMonth:null, coFrom:"home" };
 
 /* この端末を使う人。送信アプリと同じ鍵（同じ場所に置いてあるので共通） */
@@ -426,8 +427,10 @@ function pickNames(){
 }
 
 db.ref("master/workers").on("value", snap=>{
-  WORKERS = Object.values(snap.val()||{});
+  WRAW = snap.val()||{};
+  WORKERS = Object.values(WRAW);
   renderHome(); renderPick(); renderNames();
+  markSeen();
 });
 db.ref("nippo").on("value", snap=>{
   ALLDATA = snap.val() || {};
@@ -456,7 +459,37 @@ function backFromCo(){
 }
 
 /* ================== この端末の名前 ================== */
-function saveMe(n){ ME=n; try{ localStorage.setItem(ME_KEY,n); }catch(e){} }
+function saveMe(n){ ME=n; try{ localStorage.setItem(ME_KEY,n); }catch(e){} markSeen(); }
+
+/* ---- だれが使いはじめたか（管理画面のメンバータブで見る） ----
+   名前がえらばれている状態で開いたら、master/seen/{名簿のキー}/kakunin に
+   最後に開いた日（d）と、ホーム画面のアイコンから開いた日（icon）を書く。1日1回だけ
+   （アイコンから開いたのがその日はじめてなら、もう1回）。日報（nippo/…）と名簿には書かない。
+   送信アプリ（nippo.html）・かんたん日報（jochu.html）にも同じ markSeen がある。直すときはそろえること */
+const SEEN_APP = "kakunin";
+let seenSent = "";
+function markSeen(){
+  if(!ME) return;
+  const key = Object.keys(WRAW).find(k=>WRAW[k] && WRAW[k].name===ME);
+  if(!key) return;
+  const t = new Date();
+  const d = t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0");
+  const icon = !!((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+    window.navigator.standalone===true);
+  const lk = "yotsuba.seen."+SEEN_APP;
+  let last = {};
+  try{ last = JSON.parse(localStorage.getItem(lk)||"{}") || {}; }catch(e){ last = {}; }
+  const same = last.k===key && last.d===d;
+  if(same && (last.icon || !icon)) return;
+  const sig = key+"|"+d+"|"+icon;
+  if(seenSent===sig) return;
+  seenSent = sig;
+  const up = {d:d};
+  if(icon) up.icon = d;
+  db.ref("master/seen/"+key+"/"+SEEN_APP).update(up).then(()=>{
+    try{ localStorage.setItem(lk, JSON.stringify({k:key, d:d, icon:icon || (same && !!last.icon)})); }catch(e){}
+  }).catch(()=>{ seenSent = ""; });
+}
 function openPick(canCancel, keepCo){
   pkCanCancel=!!canCancel;
   if(!keepCo) pkCoOpen=false;

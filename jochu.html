@@ -325,7 +325,8 @@ function txMonth(ym, change, stamp){
 }
 
 /* ================== データ ================== */
-let WORKERS = [], MATOME = {}, MONTHS = {};
+/* WRAW＝名簿をキーつきのまま持っておく（開いた日を書くとき、名前からキーをさがすため） */
+let WORKERS = [], WRAW = {}, MATOME = {}, MONTHS = {};
 let gotW = false, gotM = false;
 let PLACE = "", ME = "";
 try{ PLACE = localStorage.getItem(PLACE_KEY) || ""; ME = localStorage.getItem(ME_KEY) || ""; }catch(e){}
@@ -367,7 +368,9 @@ function rowEntry(r){
 }
 
 /* ================== 読みこみ ================== */
-db.ref("master/workers").on("value", s=>{ WORKERS = Object.values(s.val()||{}); gotW = true; onData(); });
+db.ref("master/workers").on("value", s=>{
+  WRAW = s.val()||{}; WORKERS = Object.values(WRAW); gotW = true; onData();
+});
 db.ref("master/jochMatome").on("value", s=>{ MATOME = s.val()||{}; gotM = true; onData(); });
 /* 送ったかどうかを見るため、1週間前から今日までの月だけ読む */
 [...new Set([ymOf(addDays(todayStr(), -BACK_DAYS)), ymOf(todayStr())])].forEach(ym=>{
@@ -375,6 +378,7 @@ db.ref("master/jochMatome").on("value", s=>{ MATOME = s.val()||{}; gotM = true; 
 });
 function onData(){
   if(!gotW || !gotM) return;
+  markSeen();
   if(isOn("scLoad")){ if(setupOk()) goMain(); else goPlace(); return; }
   if(isOn("scPlace")) renderPlace();
   if(isOn("scMatome")) renderMatome();
@@ -425,7 +429,38 @@ function pickName(n){
   PLACE = setupPlace; ME = n;
   try{ localStorage.setItem(PLACE_KEY, PLACE); localStorage.setItem(ME_KEY, ME); }catch(e){}
   V.date = todayStr();
+  markSeen();
   goMain();
+}
+
+/* ---- だれが使いはじめたか（管理画面のメンバータブで見る） ----
+   場所と名前がえらばれている状態で開いたら、master/seen/{名簿のキー}/jochu に
+   最後に開いた日（d）と、ホーム画面のアイコンから開いた日（icon）を書く。1日1回だけ
+   （アイコンから開いたのがその日はじめてなら、もう1回）。まとめて送る場所でも、送る人（ME）の分だけ書く。
+   日報（nippo/…）と名簿には書かない。
+   送信アプリ（nippo.html）・確認アプリ（kakunin.html）にも同じ markSeen がある。直すときはそろえること */
+const SEEN_APP = "jochu";
+let seenSent = "";
+function markSeen(){
+  if(!setupOk()) return;
+  const key = Object.keys(WRAW).find(k=>WRAW[k] && WRAW[k].name===ME);
+  if(!key) return;
+  const d = todayStr();
+  const icon = !!((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+    window.navigator.standalone===true);
+  const lk = "yotsuba.seen."+SEEN_APP;
+  let last = {};
+  try{ last = JSON.parse(localStorage.getItem(lk)||"{}") || {}; }catch(e){ last = {}; }
+  const same = last.k===key && last.d===d;
+  if(same && (last.icon || !icon)) return;
+  const sig = key+"|"+d+"|"+icon;
+  if(seenSent===sig) return;
+  seenSent = sig;
+  const up = {d:d};
+  if(icon) up.icon = d;
+  db.ref("master/seen/"+key+"/"+SEEN_APP).update(up).then(()=>{
+    try{ localStorage.setItem(lk, JSON.stringify({k:key, d:d, icon:icon || (same && !!last.icon)})); }catch(e){}
+  }).catch(()=>{ seenSent = ""; });
 }
 
 /* ---- ふだんの画面 ---- */

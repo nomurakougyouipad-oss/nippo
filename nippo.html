@@ -642,7 +642,8 @@ const STALE_DAYS = 30;
 const SCREENS=["scMe","scTop","scStep1","scStep2","scConfirm","scDone","scJobs","scHist"];
 
 /* ================== データ ================== */
-let WORKERS=[], JOBS=[], TEAMS={}, STATIONED=new Set(), CLOSED=[];
+/* WRAW＝名簿をキーつきのまま持っておく（開いた日を書くとき、名前からキーをさがすため） */
+let WORKERS=[], WRAW={}, JOBS=[], TEAMS={}, STATIONED=new Set(), CLOSED=[];
 let ALLDATA={}, LASTUSED={}, FREE_NAMES=[], SENT_DAYS=new Set();
 let ready=false;
 
@@ -834,7 +835,8 @@ function batchSig(rows){ return rows.map(rowSig).sort().join("\n"); }
 /* ================== 読み込み ================== */
 db.ref("master").on("value", snap=>{
   const v=snap.val()||{};
-  WORKERS=Object.values(v.workers||{});
+  WRAW=v.workers||{};
+  WORKERS=Object.values(WRAW);
   JOBS=Object.values(v.jobs||{});
   CLOSED=v.closed?Object.values(v.closed):[];
   TEAMS={}; Object.values(v.teams||{}).forEach(t=>{ if(t&&t.name) TEAMS[t.name]=t.members||[]; });
@@ -847,6 +849,7 @@ db.ref("master").on("value", snap=>{
   /* 名前がまだなら、まずそれを選んでもらう */
   if(!ME) openMe(false);
   else if(document.getElementById("scMe").classList.contains("on")) renderMeList();
+  markSeen();
 });
 db.ref("nippo").on("value", snap=>{
   ALLDATA=snap.val()||{};
@@ -886,7 +889,36 @@ function leaveInput(){
 }
 
 /* ================== この端末の名前 ================== */
-function saveMe(n){ ME=n; try{ localStorage.setItem(ME_KEY,n); }catch(e){} }
+function saveMe(n){ ME=n; try{ localStorage.setItem(ME_KEY,n); }catch(e){} markSeen(); }
+
+/* ---- だれが使いはじめたか（管理画面のメンバータブで見る） ----
+   名前がえらばれている状態で開いたら、master/seen/{名簿のキー}/nippo に
+   最後に開いた日（d）と、ホーム画面のアイコンから開いた日（icon）を書く。1日1回だけ
+   （アイコンから開いたのがその日はじめてなら、もう1回）。日報（nippo/…）と名簿には書かない。
+   確認アプリ（kakunin.html）・かんたん日報（jochu.html）にも同じ markSeen がある。直すときはそろえること */
+const SEEN_APP = "nippo";
+let seenSent = "";
+function markSeen(){
+  if(!ME) return;
+  const key = Object.keys(WRAW).find(k=>WRAW[k] && WRAW[k].name===ME);
+  if(!key) return;
+  const d = todayStr();
+  const icon = !!((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+    window.navigator.standalone===true);
+  const lk = "yotsuba.seen."+SEEN_APP;
+  let last = {};
+  try{ last = JSON.parse(localStorage.getItem(lk)||"{}") || {}; }catch(e){ last = {}; }
+  const same = last.k===key && last.d===d;
+  if(same && (last.icon || !icon)) return;
+  const sig = key+"|"+d+"|"+icon;
+  if(seenSent===sig) return;
+  seenSent = sig;
+  const up = {d:d};
+  if(icon) up.icon = d;
+  db.ref("master/seen/"+key+"/"+SEEN_APP).update(up).then(()=>{
+    try{ localStorage.setItem(lk, JSON.stringify({k:key, d:d, icon:icon || (same && !!last.icon)})); }catch(e){}
+  }).catch(()=>{ seenSent = ""; });
+}
 function openMe(canCancel){
   meCanCancel=!!canCancel;
   document.getElementById("meCancel").style.display=meCanCancel?"block":"none";
