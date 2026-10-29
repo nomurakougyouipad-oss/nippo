@@ -377,6 +377,25 @@
   .ksv{color:var(--steel);}
   .ldk{font-size:12px;color:var(--steel);margin-top:2px;}
 
+  /* --- 常駐（常駐先ごとの箱。上のしぼり込みボタンは注番管理と同じ見た目） --- */
+  .jo-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px;}
+  .jo-top .fillrow{flex:1;}
+  .jo-top .mini{flex:none;}
+  #joTabs button{flex:1 1 110px;min-height:42px;padding:9px 10px;background:transparent;
+    border:1px solid var(--line-s);border-radius:2px;font-size:14.5px;cursor:pointer;
+    font-family:inherit;color:var(--ink);line-height:1.25;}
+  #joTabs button.on{background:var(--green);color:#f3f2f2;border-color:var(--green);font-weight:600;}
+  .jo-box{margin-bottom:18px;break-inside:avoid;}
+  .jo-hd{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;
+    background:var(--tint);border:1px solid var(--line);border-bottom:none;border-radius:2px 2px 0 0;}
+  .jo-hd .nm{font-size:17px;font-weight:700;color:var(--green);}
+  .jo-hd .ct{font-size:13.5px;color:var(--muted);}
+  .jo-hd label.chk{margin:0 0 0 auto;font-size:14px;}
+  .jo-hd label.chk .box{width:22px;height:22px;font-size:14px;background:var(--card);}
+  .jo-hd label.chk .box.on{background:var(--green);}
+  .jo-tbl .lnk{font-size:14px;}
+  .jo-none{padding:14px;background:var(--card);border:1px solid var(--line);font-size:13.5px;color:var(--faint);}
+
   /* 職長明細の印刷。印刷するときだけ #ldPrint に中身を入れて、ほかは隠す */
   #ldPrint{display:none;}
   @media print{
@@ -404,6 +423,13 @@
     #ldPrint .ks-tbl{border:1.5px solid #333;}
     #ldPrint .ks-tbl th,#ldPrint .ks-tbl td{border:1px solid #555;padding:5px 8px;font-size:12.5px;}
     #ldPrint .ks-tbl th{color:#555;position:static;}
+    /* 常駐の表も、同じく線を濃くする。チェックの欄と名前のボタンは字だけにする */
+    #ldPrint .jo-hd{background:#fff;border:1.5px solid #333;border-bottom:none;}
+    #ldPrint .jo-hd .nm{color:#000;}
+    #ldPrint .jo-tbl{border:1.5px solid #333;}
+    #ldPrint .jo-tbl th,#ldPrint .jo-tbl td{border:1px solid #555;padding:5px 8px;font-size:12.5px;}
+    #ldPrint .jo-tbl th{color:#555;position:static;}
+    #ldPrint .jo-tbl .zz{color:#555;}
   }
 </style>
 </head>
@@ -490,6 +516,15 @@
         <div id="oneOffWrap"></div>
         <div id="oneLeadWrap"></div>
       </div>
+    </div>
+
+    <div class="pane" id="pJoch">
+      <div class="jo-top">
+        <div class="fillrow" id="joTabs"></div>
+        <button class="mini" id="joPrint">印刷</button>
+      </div>
+      <div id="joBoxes"></div>
+      <div class="note">休み＝有給・欠勤などをまとめた日数。ほかの現場へ応援＝職長の日報で呼ばれた日数（その時間は個人別にだけ入ります）</div>
     </div>
 
     <div class="pane" id="pLead">
@@ -634,6 +669,8 @@ const WORK_KINDS  = ["平日工場","平日現場","休日工場","休日現場"
 const KUBUN = ["現場","松前工場","伊予工場","東方工場","東レ常駐","設計","緑化","JFE","神戸製鋼","北吉田","その他","大洲バイオマス"];
 /* 監督・指揮者の手当がつく現場（職長はいない）。日報アプリ（nippo.html）の KS_KUBUN と同じにしておくこと */
 const KS_KUBUN = ["JFE","神戸製鋼","大洲バイオマス"];
+/* 常駐先。名簿（master/workers）の joch に入れる。かんたん日報（jochu.html）の JOCH と同じにしておくこと */
+const JOCH = ["トレロン常駐","プリプレグ常駐","メンブレン常駐","小川常駐","東方工場","事務所","松前倉庫番"];
 const OFF_REASONS = ["休み","有給","欠勤","振休","特休"];
 const OT2_KINDS   = ["工場残業","現場残業"];   /* 「残業」として大きく出す分 */
 /* 月合計の一覧に並べる項目（残業は上に大きく出すので、ここには入れない） */
@@ -649,6 +686,8 @@ let LOG = [], WHO = "", eTarget = null, dTarget = null;
 /* 注番なしで届いている日報。FREEDONE＝「注番なしで確定」としてリストから外した件名 */
 let FREEDONE = [], regFreeMonth = null, regFreeGroups = [], mfFixed = false, mfIdx = null;
 let fKubun = "", pKubun = "", jKubun = "", pSort = "name";
+/* 常駐タブ。JMATOME＝「1人がまとめて送る」常駐先（master/jochMatome）、joFilter＝しぼり込み中の常駐先（空ならすべて） */
+let JMATOME = {}, joFilter = "";
 const jClosed = new Set();   // 工事別工数で閉じている頭2文字（表示だけ。保存しない）
 
 /* ============ 小道具 ============ */
@@ -873,7 +912,7 @@ function openReg(){
   MODE = "reg";
   tab  = "reg";
   /* 日報の画面と、直す・削除のダイアログは、もとの文字ごと取り除く */
-  ["pDetail","pPerson","pLead","pJob","pLog","pExcel","mEdit","mDel"].forEach(id=>{
+  ["pDetail","pPerson","pJoch","pLead","pJob","pLog","pExcel","mEdit","mDel"].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.parentNode.removeChild(el);
   });
@@ -925,6 +964,7 @@ function boot(){
   db.ref("master/closed").on("value",  s=>{ CLOSED  = s.val()||[]; render(); });
   /* 「注番なしで確定」にした件名。日報は消さず、注番なしのリストから外すだけ */
   db.ref("master/freeDone").on("value", s=>{ FREEDONE = (s.val()||[]).filter(Boolean); render(); });
+  db.ref("master/jochMatome").on("value", s=>{ JMATOME = s.val()||{}; render(); });
   /* 修正履歴は日報管理でしか使いません */
   if(MODE==="full")
     db.ref("log").on("value", s=>{ const v=s.val()||{}; LOG=Object.keys(v).map(k=>v[k]); render(); });
@@ -957,6 +997,7 @@ function renderNav(){
     const items = [
       {k:"detail", l:"明細一覧",   s:"全員分の日報"},
       {k:"person", l:"個人別",     s:"月合計・職長手当"},
+      {k:"joch",   l:"常駐",       s:"常駐先ごとの出勤・時間"},
       {k:"lead",   l:"職長明細",   s:"職長ごとの日別カウント"},
       {k:"job",    l:"工事別工数", s:"注番・区分ごと"},
       {k:"reg",    l:"注番管理",   s:"登録・編集・削除"},
@@ -974,20 +1015,20 @@ function renderNav(){
   const t = TAB_NAME[tab];
   document.getElementById("ttl").textContent = t;
   updateTitleMonth();
-  ["pDetail","pPerson","pLead","pJob","pReg","pMember","pLog","pExcel"].forEach((id,i)=>{
+  ["pDetail","pPerson","pJoch","pLead","pJob","pReg","pMember","pLog","pExcel"].forEach((id,i)=>{
     const el = document.getElementById(id);
-    if(el) el.classList.toggle("on", ["detail","person","lead","job","reg","member","log","excel"][i]===tab);
+    if(el) el.classList.toggle("on", ["detail","person","joch","lead","job","reg","member","log","excel"][i]===tab);
   });
   renderExtraCtrl();
 }
 
-const TAB_NAME = {detail:"明細一覧", person:"個人別", lead:"職長明細", job:"工事別工数",
+const TAB_NAME = {detail:"明細一覧", person:"個人別", joch:"常駐", lead:"職長明細", job:"工事別工数",
   reg:"注番管理", member:"メンバー", log:"修正履歴", excel:"Excel出力"};
 function updateTitleMonth(){
   const el = document.getElementById("ttlMonth");
   if(!el) return;
   // 月に関係のない画面では出さない
-  const useMonth = (tab==="detail"||tab==="person"||tab==="lead"||tab==="job"||tab==="excel");
+  const useMonth = (tab==="detail"||tab==="person"||tab==="joch"||tab==="lead"||tab==="job"||tab==="excel");
   el.textContent = (useMonth && curMonth) ? ymJP(curMonth) : "";
 }
 function ymJP(m){ const a=String(m||"").split("-"); return a[0]+"年"+Number(a[1])+"月"; }
@@ -999,6 +1040,7 @@ function render(){
   renderExtraCtrl();
   if(tab==="detail") renderDetail();
   else if(tab==="person") renderPerson();
+  else if(tab==="joch") renderJoch();
   else if(tab==="lead") renderLead();
   else if(tab==="reg") renderReg();
   else if(tab==="member") renderMember();
@@ -1709,6 +1751,103 @@ function renderOne(){
   ) : "";
 }
 
+/* ---- 常駐 ----------------------------------------------------------------
+   常駐先ごとに、そこが付いている人（名簿の joch）の出勤・時間を出す。読むだけで、日報は書き換えない。
+   数えるのは、かんたん日報（jochu.html）から来た行（src:"joch"）だけ。
+   「ほかの現場へ応援」だけは、職長の日報（src が joch でない行）で呼ばれた日を数える。
+   見出しの「1人がまとめて送る」は master/jochMatome に書く（変えたら修正履歴に残す）
+   ---------------------------------------------------------------------- */
+/* その常駐先が付いている人（隠している人は出さない） */
+function jochMembers(p){
+  return WORKERS.filter(w=>w.active!==false && w.joch===p && w.name).map(w=>w.name).sort(byLen);
+}
+/* 1人ぶんの数。日数は、同じ日に何枚あっても1日 */
+function jochStat(n, rows){
+  const mine = rows.filter(r=>r.n===n);
+  const jw = mine.filter(r=>r.src==="joch" && !r.off);
+  const jo = mine.filter(r=>r.src==="joch" && r.off);
+  const days = [...new Set(jw.map(r=>r.d))];
+  return {
+    days: days.length,
+    hol:  days.filter(d=>redDayOf(d)).length,
+    work: jw.reduce((a,r)=>a+workNetOf(r), 0),
+    ot:   jw.reduce((a,r)=>a+OT2_KINDS.reduce((x,k)=>x+((r.h && r.h[k])||0), 0), 0),
+    off:  new Set(jo.map(r=>r.d)).size,
+    paid: new Set(jo.filter(r=>r.offReason==="有給").map(r=>r.d)).size,
+    help: new Set(mine.filter(r=>r.src!=="joch" && !r.off).map(r=>r.d)).size
+  };
+}
+/* 常駐先1つぶんの箱。印刷のときは、チェックと名前のボタンを字だけにする */
+function jochBox(p, rows, forPrint){
+  const ns = jochMembers(p), mt = !!JMATOME[p];
+  const dash = '<span class="zz">—</span>';
+  const head = '<div class="jo-hd"><span class="nm">'+esc(p)+'</span><span class="ct">'+ns.length+'人</span>'+
+    (forPrint ? (mt ? '<span class="ct" style="margin-left:auto">1人がまとめて送る</span>' : '')
+      : '<label class="chk" data-mt="'+esc(p)+'"><span class="box'+(mt ? " on" : "")+'">'+(mt ? "✓" : "")+'</span>'+
+        '<span>1人がまとめて送る</span></label>')+
+    '</div>';
+  if(!ns.length) return '<div class="jo-box">'+head+
+    '<div class="jo-none">この常駐先が付いた人はいません（メンバーの画面で付けられます）</div></div>';
+  return '<div class="jo-box">'+head+'<div class="wrapT"><table class="jo-tbl"><thead><tr>'+
+    '<th>名前</th><th class="num">出勤日数</th><th class="num">うち休日</th><th class="num">時間（残業ぬき）</th>'+
+    '<th class="num">残業</th><th class="num">休み</th><th class="num">ほかの現場へ応援</th></tr></thead><tbody>'+
+    ns.map(n=>{
+      const s = jochStat(n, rows);
+      return '<tr><td>'+(forPrint ? esc(n) : '<button class="lnk" data-jn="'+esc(n)+'">'+esc(n)+'</button>')+'</td>'+
+        '<td class="num">'+(s.days || dash)+'</td>'+
+        '<td class="num">'+(s.hol || dash)+'</td>'+
+        '<td class="num">'+(s.work ? f1(s.work) : dash)+'</td>'+
+        '<td class="num">'+(s.ot ? f1(s.ot) : dash)+'</td>'+
+        '<td class="num">'+(s.off ? s.off+(s.paid ? "（有給"+s.paid+"）" : "") : dash)+'</td>'+
+        '<td class="num">'+(s.help || dash)+'</td></tr>';
+    }).join("")+'</tbody></table></div></div>';
+}
+function jochShown(){ return joFilter ? [joFilter] : JOCH; }
+function renderJoch(){
+  const el = document.getElementById("joBoxes");
+  if(!el) return;
+  document.getElementById("joTabs").innerHTML =
+    '<button class="'+(joFilter ? "" : "on")+'" data-jf="">すべて</button>'+
+    JOCH.map(p=>'<button class="'+(joFilter===p ? "on" : "")+'" data-jf="'+esc(p)+'">'+esc(p)+'</button>').join("");
+  document.querySelectorAll("#joTabs [data-jf]").forEach(b=>{
+    b.onclick = ()=>{ joFilter = b.dataset.jf; renderJoch(); };
+  });
+  const rows = rowsOf(curMonth);
+  el.innerHTML = jochShown().map(p=>jochBox(p, rows, false)).join("");
+  /* 名前を押すと、その人の「個人別」の詳細を開く（区分のしぼり込みは外す） */
+  el.querySelectorAll("[data-jn]").forEach(b=>{
+    b.onclick = ()=>{
+      curOne = b.dataset.jn; pMissed = null; pKubun = ""; tab = "person";
+      renderNav(); render(); window.scrollTo(0,0);
+    };
+  });
+  el.querySelectorAll("[data-mt]").forEach(b=>{
+    b.onclick = e=>{ e.preventDefault(); toggleMatome(b.dataset.mt); };
+  });
+  document.getElementById("joPrint").onclick = printJoch;
+}
+function toggleMatome(p){
+  const on = !JMATOME[p];
+  if(!confirm(on
+      ? "「"+p+"」を、1人がみんなの分をまとめて送る場所にします。\n\nかんたん日報で、この場所の人の分を1回で送れるようになります。"
+      : "「"+p+"」の「1人がまとめて送る」をやめます。\n\nかんたん日報で、1人ずつ自分の分を送るようになります。")) return;
+  db.ref("master/jochMatome/"+p).set(on ? true : null)
+    .then(()=>pushLog("常駐「"+p+"」の「1人がまとめて送る」を"+(on ? "付けました" : "外しました"), "", WHO))
+    .catch(e=>alert("保存に失敗しました: "+e.message));
+}
+/* 印刷。職長明細と同じやり方（印刷するときだけ #ldPrint に中身を入れる） */
+function printJoch(){
+  const rows = rowsOf(curMonth);
+  document.getElementById("ldPrint").innerHTML =
+    '<section class="ld-sheet"><div class="ld-pt">よつば建設工業　常駐</div>'+
+    '<div class="ld-hd"><div class="who">'+esc(ymJP(curMonth))+(joFilter ? '<span>'+esc(joFilter)+'</span>' : '')+'</div></div>'+
+    jochShown().map(p=>jochBox(p, rows, true)).join("")+
+    '<div class="ld-rule">休み＝有給・欠勤などをまとめた日数。ほかの現場へ応援＝職長の日報で呼ばれた日数（その時間は個人別にだけ入ります）。'+
+    '出勤日数・時間・残業・休みは、かんたん日報で送った分です。</div></section>';
+  document.body.classList.add("ld-printing");
+  window.print();
+}
+
 /* ---- 職長明細 ----------------------------------------------------------
    職長ごとに、日ごと・人ごとのカウントを出す画面。
    数え方は個人別・Excel の職長手当と同じ leadAgg（上の「職長手当（工数）」）を使います。
@@ -2132,6 +2271,7 @@ function freeGroups(){
   Object.keys(ALLDATA).sort().forEach(m=>{
     rowsOf(m).forEach(r=>{
       if(r.no) return;                       /* 注番が付いているものは対象外 */
+      if(r.src==="joch") return;             /* かんたん日報の行も出さない（件名は常駐先の名前なので） */
       const j = r.j || "";
       if(!g[j]) g[j] = {j:j, rows:[], months:{}, batches:{}};
       g[j].rows.push(r);
@@ -2381,7 +2521,7 @@ function doFreeFix(){
   const fix = rows=>{
     let c = 0;
     const next = rows.map(r=>{
-      if(r.no || (r.j||"")!==target) return r;
+      if(r.no || r.src==="joch" || (r.j||"")!==target) return r;
       c++;
       return Object.assign({}, r, {no:nno, j:name});
     });
@@ -3002,6 +3142,9 @@ function openMem(key){
   document.getElementById("mmKubun").innerHTML =
     W_KUBUN.map(k=>opt(k, k, isNew ? "自社" : wKubunOf(w))).join("");
   document.getElementById("mmSho").value = isNew ? "" : (w.shozoku || "");
+  const jc = isNew ? "" : (w.joch || "");
+  document.getElementById("mmJoch").innerHTML = opt("", "なし", jc) +
+    JOCH.concat(jc && JOCH.indexOf(jc)<0 ? [jc] : []).map(p=>opt(p, p, jc)).join("");
 
   const hideBtn = document.getElementById("mmHide");
   hideBtn.style.display = isNew ? "none" : "";
@@ -3030,6 +3173,8 @@ function doMemSave(act){
   if(W_KUBUN.indexOf(kubun) < 0){ mmErr("区分を選んでください。"); return; }
   const sho = (document.getElementById("mmSho").value || "").trim();
   if(sho.length > W_SHOZOKU_MAX){ mmErr("所属は"+W_SHOZOKU_MAX+"文字までです。"); return; }
+  /* 常駐先（joch）。「なし」なら項目ごと消す */
+  const joch = document.getElementById("mmJoch").value || "";
 
   /* --- 新しく登録する --- */
   if(!mmKey){
@@ -3044,8 +3189,10 @@ function doMemSave(act){
             "（同じ名前の人が2人いると、日報の集計が混ざってしまいます）");
       return;
     }
+    const rec = {name:name, kubun:kubun, shozoku:sho, active:true};
+    if(joch) rec.joch = joch;
     db.ref("master/workers/"+nextWorkerKey())
-      .set({name:name, kubun:kubun, shozoku:sho, active:true})
+      .set(rec)
       .then(hideMem)
       .catch(e=>mmErr("登録に失敗しました: "+e.message));
     return;
@@ -3054,7 +3201,7 @@ function doMemSave(act){
   /* --- 今いる人を直す --- */
   const w = WORKERS.find(x=>x._key===mmKey);
   if(!w){ mmErr("その人が見つかりませんでした。画面を読み直してください。"); return; }
-  const payload = {shozoku:sho, active:(act===undefined ? w.active!==false : act)};
+  const payload = {shozoku:sho, active:(act===undefined ? w.active!==false : act), joch:joch || null};
   /* 区分は、選び直したときだけ送ります。古い「協力」のままの人を、
      所属を直しただけで「常駐協力」に書き換えてしまわないためです
      （どちらも kubunGroup では同じ扱いですが、画面の区分の文字は変わります） */
@@ -3531,6 +3678,9 @@ document.getElementById("xlDem").addEventListener("click", ()=>{
     <select id="mmKubun"></select></div>
   <div class="ek wide"><label>所属</label>
     <input type="text" id="mmSho" class="tx" maxlength="30" placeholder="協力会社名（自社なら空欄）"></div>
+  <div class="ek wide"><label>常駐先</label>
+    <select id="mmJoch"></select></div>
+  <div class="note">かんたん日報で自分の日報を送る人だけ付けます。付けると、職長の送信画面の「自社」の名簿から隠れます（「他の人を追加」からは呼べます）。</div>
 
   <div class="ehd" id="mmHideHd">表示の切り替え</div>
   <button class="mini" id="mmHide"></button>

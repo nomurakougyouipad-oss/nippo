@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>かんたん日報｜よつば建設工業</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icons/nippo-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/nippo-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/nippo-180.png">
+<link rel="manifest" href="manifest-jochu.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="かんたん日報">
+<meta name="theme-color" content="#1f4fae">
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<style>
+  /* 常駐の人が自分で送る日報。年配の方も使うので、字は大きく、ボタンを押すだけにする */
+  :root{
+    --green:#1c4b34; --tint:#e6ede8;
+    --blue:#1f4fae; --blue-d:#163c86; --blue-bg:#e8eefa;
+    --ink:#201e1d; --muted:#55524f; --faint:#7d7979;
+    --line:rgba(32,30,29,.2); --line-s:rgba(32,30,29,.32);
+    --paper:#f3f2f2; --card:#fbfaf8; --field:#e9e8e8;
+    --mag-d:#8e0b4c;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Sans","Yu Gothic UI","Noto Sans JP",sans-serif;
+    background:var(--paper);color:var(--ink);line-height:1.5;font-size:18px;}
+  button{font-family:inherit;color:inherit;cursor:pointer;}
+  button:disabled{cursor:default;}
+  .wrap{max-width:520px;margin:0 auto;padding:22px 20px 44px;}
+  .screen{display:none;} .screen.on{display:block;}
+  .brand{font-size:13px;letter-spacing:.14em;color:var(--muted);}
+  h1{margin:10px 0 22px;font-size:30px;font-weight:700;line-height:1.3;}
+  .lead{margin:-10px 0 20px;font-size:19px;color:var(--muted);line-height:1.6;}
+  .note{margin-top:16px;font-size:16px;color:var(--muted);line-height:1.6;}
+  .back{display:block;width:100%;min-height:60px;margin-top:22px;background:transparent;
+    border:2px solid var(--line-s);border-radius:6px;font-size:20px;color:var(--muted);}
+
+  /* ---- 場所・名前をえらぶ ---- */
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+  .pbtn{min-height:86px;padding:12px 8px;background:var(--card);border:2px solid var(--line-s);
+    border-radius:6px;font-size:22px;font-weight:700;line-height:1.3;}
+  .pbtn:active{background:var(--tint);border-color:var(--green);}
+  .mlist{margin:0 0 22px;padding:16px 18px;background:var(--card);border:1px solid var(--line);border-radius:6px;}
+  .mlist div{font-size:24px;font-weight:700;padding:4px 0;}
+
+  /* ---- ふだんの画面 ---- */
+  .who{display:flex;align-items:center;gap:10px;width:100%;padding:14px 16px;text-align:left;
+    background:var(--card);border:1px solid var(--line);border-radius:6px;}
+  .who .p{font-size:20px;font-weight:700;}
+  .who .n{font-size:18px;color:var(--muted);}
+  .who .ch{margin-left:auto;flex:none;font-size:15px;color:var(--muted);text-decoration:underline;}
+  .dbar{display:flex;align-items:center;gap:10px;margin-top:22px;}
+  .dbar button{flex:none;width:66px;height:66px;background:var(--card);border:2px solid var(--line-s);
+    border-radius:6px;font-size:36px;line-height:1;}
+  .dbar button:disabled{opacity:.2;}
+  .dbar .d{flex:1;text-align:center;font-size:28px;font-weight:700;line-height:1.25;}
+  .dbar .d small{display:block;font-size:16px;font-weight:600;color:var(--muted);}
+  .dkind{margin-top:8px;text-align:center;font-size:19px;color:var(--muted);}
+  .dkind.hol{color:var(--mag-d);font-weight:700;}
+  .sent{margin-top:16px;padding:14px 16px;background:var(--green);color:#fff;border-radius:6px;
+    font-size:21px;font-weight:700;}
+  .sent .s{margin-top:4px;font-size:17px;font-weight:400;line-height:1.6;}
+  .big{display:block;width:100%;margin-top:22px;padding:24px 14px;background:var(--blue);color:#fff;
+    border:none;border-radius:8px;font-size:30px;font-weight:700;line-height:1.3;}
+  .big .s{display:block;margin-top:4px;font-size:23px;font-weight:600;}
+  .big:active{background:var(--blue-d);}
+  .big:disabled{background:rgba(32,30,29,.2);}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
+  .sub{display:block;width:100%;min-height:76px;padding:12px 8px;background:var(--card);
+    border:2px solid var(--blue);border-radius:8px;color:var(--blue-d);font-size:22px;font-weight:700;line-height:1.3;}
+  .sub:active{background:var(--blue-bg);}
+  .week{margin-top:34px;padding-top:18px;border-top:1px solid var(--line);}
+  .week .t{font-size:18px;font-weight:700;color:var(--muted);margin-bottom:10px;}
+  .week .ds{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;}
+  .week .c{padding:8px 0 6px;text-align:center;background:var(--card);border:1px solid var(--line);border-radius:6px;}
+  .week .c.today{border:2px solid var(--ink);}
+  .week .c .w{font-size:17px;color:var(--muted);}
+  .week .c .m{height:36px;font-size:28px;font-weight:700;color:var(--green);line-height:36px;}
+
+  /* ---- 時間をかえる・休み・1人ずつ ---- */
+  .ddate{font-size:20px;font-weight:700;margin-bottom:6px;}
+  .ddate span{font-weight:400;color:var(--muted);}
+  .stp{margin-top:16px;padding:16px;background:var(--card);border:1px solid var(--line);border-radius:8px;}
+  .stp .l{font-size:21px;font-weight:700;}
+  .stp .ctl{display:flex;align-items:center;gap:12px;margin-top:10px;}
+  .stp .ctl button{flex:none;width:78px;height:78px;background:var(--field);border:2px solid var(--line-s);
+    border-radius:8px;font-size:42px;font-weight:700;line-height:1;}
+  .stp .ctl button:disabled{opacity:.25;}
+  .stp .ctl .v{flex:1;text-align:center;font-size:46px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .stp .ctl .v small{margin-left:4px;font-size:21px;font-weight:600;color:var(--muted);}
+  .stp .hint{margin-top:8px;font-size:16px;color:var(--muted);line-height:1.5;}
+  .rgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+  .rbtn{min-height:76px;background:var(--card);border:2px solid var(--line-s);border-radius:8px;
+    font-size:25px;font-weight:700;}
+  .rbtn.on{background:var(--green);border-color:var(--green);color:#fff;}
+  .pc{margin-top:16px;padding:16px;background:var(--card);border:1px solid var(--line-s);border-radius:8px;}
+  .pc .nm{font-size:25px;font-weight:700;}
+  .pc .modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;}
+  .pc .modes button{min-height:62px;background:#fff;border:2px solid var(--line-s);border-radius:8px;
+    font-size:19px;font-weight:700;line-height:1.25;}
+  .pc .modes button.on{background:var(--blue);border-color:var(--blue);color:#fff;}
+  .pc .stp{margin-top:12px;background:#fff;}
+  .pc .rgrid{margin-top:12px;}
+  .pc .rbtn{min-height:62px;font-size:21px;}
+  .pc .need{margin-top:8px;font-size:17px;font-weight:700;color:var(--mag-d);}
+
+  /* ---- 送りました ---- */
+  .ok{width:116px;height:116px;margin:26px auto 12px;border-radius:50%;background:var(--green);color:#fff;
+    font-size:72px;font-weight:700;line-height:116px;text-align:center;}
+  .done-h{text-align:center;font-size:34px;font-weight:700;}
+  .done-d{margin-top:6px;text-align:center;font-size:20px;color:var(--muted);}
+  .done-l{margin-top:20px;padding:6px 18px;background:var(--card);border:1px solid var(--line);border-radius:8px;}
+  .done-l div{padding:10px 0;font-size:22px;font-weight:600;border-bottom:1px solid var(--line);}
+  .done-l div:last-child{border-bottom:none;}
+
+  /* ---- 入れかえの確認・送っています ---- */
+  .modal{position:fixed;inset:0;display:none;align-items:flex-end;justify-content:center;
+    background:rgba(32,30,29,.45);z-index:50;}
+  .modal.on{display:flex;}
+  .modal .in{width:100%;max-width:520px;padding:26px 20px 30px;background:var(--paper);border-radius:12px 12px 0 0;}
+  .modal .mt{font-size:26px;font-weight:700;}
+  .modal .ms{margin-top:8px;font-size:20px;line-height:1.6;}
+  .busy{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(243,242,242,.85);z-index:60;font-size:26px;font-weight:700;}
+  .busy.on{display:flex;}
+</style>
+</head>
+<body>
+
+<!-- 読みこみ中 -->
+<div id="scLoad" class="screen on"><div class="wrap">
+  <div class="brand">よつば建設工業</div>
+  <h1>かんたん日報</h1>
+  <div class="lead">読みこんでいます…</div>
+</div></div>
+
+<!-- はじめの1回：場所をえらぶ -->
+<div id="scPlace" class="screen"><div class="wrap">
+  <div class="brand">よつば建設工業　かんたん日報</div>
+  <h1>どこで はたらいていますか？</h1>
+  <div class="grid2" id="placeList"></div>
+  <button class="back" id="placeCancel" style="display:none" onclick="goMain()">やめる</button>
+</div></div>
+
+<!-- まとめて送る場所のとき -->
+<div id="scMatome" class="screen"><div class="wrap">
+  <div class="brand" id="matomePlace"></div>
+  <h1 id="matomeTtl"></h1>
+  <div class="mlist" id="matomeList"></div>
+  <button class="big" onclick="goName()">はじめる</button>
+  <button class="back" onclick="goPlace()">← もどる</button>
+</div></div>
+
+<!-- 名前をえらぶ -->
+<div id="scName" class="screen"><div class="wrap">
+  <div class="brand" id="namePlace"></div>
+  <h1 id="nameTtl"></h1>
+  <div class="grid2" id="nameList"></div>
+  <button class="back" onclick="goPlace()">← もどる</button>
+</div></div>
+
+<!-- ふだんの画面 -->
+<div id="scMain" class="screen"><div class="wrap">
+  <button class="who" onclick="goPlace()"><span class="p" id="mPlace"></span><span class="n" id="mName"></span>
+    <span class="ch">かえる</span></button>
+  <div class="dbar">
+    <button id="dPrev" onclick="moveDay(-1)">‹</button>
+    <div class="d" id="dLabel"></div>
+    <button id="dNext" onclick="moveDay(1)">›</button>
+  </div>
+  <div class="dkind" id="dKind"></div>
+  <div id="mSent"></div>
+  <button class="big" id="mUsual" onclick="sendUsual()"></button>
+  <div id="mSubs"></div>
+  <div class="week"><div class="t">今週 送った日</div><div class="ds" id="mWeek"></div></div>
+</div></div>
+
+<!-- 時間をかえる -->
+<div id="scTime" class="screen"><div class="wrap">
+  <div class="ddate" id="tDate"></div>
+  <h1 style="margin-bottom:6px">時間をかえる</h1>
+  <div id="tSteps"></div>
+  <button class="big" id="tSend" onclick="sendTime()">送る</button>
+  <button class="back" onclick="goMain()">← もどる</button>
+</div></div>
+
+<!-- 休み -->
+<div id="scOff" class="screen"><div class="wrap">
+  <div class="ddate" id="oDate"></div>
+  <h1>休み</h1>
+  <div class="rgrid" id="oList"></div>
+  <button class="big" id="oSend" onclick="sendOff()">送る</button>
+  <button class="back" onclick="goMain()">← もどる</button>
+</div></div>
+
+<!-- 1人ずつ（まとめて送る場所） -->
+<div id="scEach" class="screen"><div class="wrap">
+  <div class="ddate" id="eDate"></div>
+  <h1 style="margin-bottom:4px">1人ずつ えらぶ</h1>
+  <div id="eList"></div>
+  <button class="big" id="eSend" onclick="sendEach()"></button>
+  <button class="back" onclick="goMain()">← もどる</button>
+</div></div>
+
+<!-- 送りました -->
+<div id="scDone" class="screen"><div class="wrap">
+  <div class="ok">✓</div>
+  <div class="done-h">送りました</div>
+  <div class="done-d" id="doneD"></div>
+  <div class="done-l" id="doneL"></div>
+  <button class="big" onclick="goMain()">とじる</button>
+</div></div>
+
+<!-- 同じ日に送りなおすときの確認 -->
+<div class="modal" id="mRep"><div class="in">
+  <div class="mt">この日は もう送ってあります</div>
+  <div class="ms">前に送った分と 入れかえます。</div>
+  <button class="big" id="repGo">入れかえて 送る</button>
+  <button class="back" style="margin-top:12px" onclick="closeRep()">やめる</button>
+</div></div>
+<div class="busy" id="busy">送っています…</div>
+
+<script>
+/* ================== Firebase（送信アプリ nippo.html と同じ） ================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyDRTF3YW0oTbMcN3cwsmMDJWoLX4HpVtPk",
+  authDomain: "yotsuba-nippo.firebaseapp.com",
+  databaseURL: "https://yotsuba-nippo-default-rtdb.firebaseio.com",
+  projectId: "yotsuba-nippo",
+  storageBucket: "yotsuba-nippo.firebasestorage.app",
+  messagingSenderId: "1007360975873",
+  appId: "1:1007360975873:web:ac229f3f4016b81e994c00"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+/* ================== 決まり ================== */
+/* 常駐先。管理画面（kanri.html）の JOCH と同じにしておくこと */
+const JOCH = ["トレロン常駐","プリプレグ常駐","メンブレン常駐","小川常駐","東方工場","事務所","松前倉庫番"];
+/* 現場の常駐は「現場」の欄、ほかは「工場」の欄に入れる */
+const JOCH_GENBA = ["トレロン常駐","プリプレグ常駐","メンブレン常駐","小川常駐"];
+const OFF_REASONS = ["休み","有給","欠勤","振休","特休"];
+const WD = ["日","月","火","水","木","金","土"];
+const USUAL = 8;          /* いつもどおり＝8時間 */
+const MAX_WEEKDAY = 8;    /* 平日の「時間」はここまで。8を超える分は残業に入れる決まり */
+const MAX_HOLIDAY = 12;   /* 日曜・祝日の「時間」はここまで */
+const MAX_OT = 12;        /* 残業 */
+const STEP = 0.5;         /* ＋−は30分ずつ */
+const BACK_DAYS = 7;      /* 前の日に戻れるのは1週間まで */
+/* スマホに覚えさせるもの。名前は送信アプリ・確認アプリと同じ鍵（同じ場所に置いてあるので共通） */
+const ME_KEY = "yotsuba.me", PLACE_KEY = "yotsuba.joch";
+
+/* ================== 小道具 ================== */
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function isKana(s){ return /^[ァ-ヴー]+$/.test(s); }
+function byLen(a,b){ return (isKana(a)-isKana(b))||(a.length-b.length)||a.localeCompare(b,"ja"); }
+function f1(v){ return (Math.round((v||0)*10)/10).toFixed(1); }
+function ymd(t){ return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0"); }
+function todayStr(){ return ymd(new Date()); }
+function addDays(s, n){ const t=new Date(s+"T00:00:00"); t.setDate(t.getDate()+n); return ymd(t); }
+function ymOf(d){ return String(d||"").slice(0,7); }
+function dLabel(ds){ const d=new Date(ds+"T00:00:00");
+  return (d.getMonth()+1)+"月"+d.getDate()+"日（"+WD[d.getDay()]+"）"; }
+
+/* ---- 暦の休日（日曜・祝日）。管理画面（kanri.html）の jpHolidays・redDayOf と同じ計算 ---- */
+const JP_HOL_CACHE = {};
+function jpHolidays(y){
+  if(JP_HOL_CACHE[y]) return JP_HOL_CACHE[y];
+  const h = {};
+  const key = (m,d)=> y+"-"+String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+  const nthMon = (m,n)=>{ const w = new Date(y,m-1,1).getDay(); return 1 + ((8-w)%7) + (n-1)*7; };
+  const shunbun = Math.floor(20.8431 + 0.242194*(y-1980) - Math.floor((y-1980)/4));
+  const shubun  = Math.floor(23.2488 + 0.242194*(y-1980) - Math.floor((y-1980)/4));
+  [[1,1,"元日"],[1,nthMon(1,2),"成人の日"],[2,11,"建国記念の日"],[2,23,"天皇誕生日"],
+   [3,shunbun,"春分の日"],[4,29,"昭和の日"],[5,3,"憲法記念日"],[5,4,"みどりの日"],[5,5,"こどもの日"],
+   [7,nthMon(7,3),"海の日"],[8,11,"山の日"],[9,nthMon(9,3),"敬老の日"],[9,shubun,"秋分の日"],
+   [10,nthMon(10,2),"スポーツの日"],[11,3,"文化の日"],[11,23,"勤労感謝の日"]]
+    .forEach(a=>{ h[key(a[0],a[1])] = a[2]; });
+  /* 振替休日：祝日が日曜なら、そのあとの祝日でない日 */
+  Object.keys(h).sort().forEach(k=>{
+    const d = new Date(k+"T00:00:00");
+    if(d.getDay()!==0) return;
+    const x = new Date(d);
+    do { x.setDate(x.getDate()+1); } while(h[key(x.getMonth()+1, x.getDate())] && x.getFullYear()===y);
+    if(x.getFullYear()===y) h[key(x.getMonth()+1, x.getDate())] = "振替休日";
+  });
+  /* 国民の休日：祝日と祝日にはさまれた日 */
+  Object.keys(h).sort().forEach(k=>{
+    const d = new Date(k+"T00:00:00"); d.setDate(d.getDate()+1);
+    const mid = key(d.getMonth()+1, d.getDate());
+    const n2 = new Date(d); n2.setDate(n2.getDate()+1);
+    if(!h[mid] && d.getDay()!==0 && d.getFullYear()===y && h[key(n2.getMonth()+1, n2.getDate())]) h[mid] = "国民の休日";
+  });
+  return (JP_HOL_CACHE[y] = h);
+}
+/* その日が日曜か祝日なら名前を返す（それ以外は空） */
+function redDayOf(ds){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ds||""));
+  if(!m) return "";
+  const hol = jpHolidays(Number(m[1]))[ds];
+  if(hol) return hol;
+  return new Date(ds+"T00:00:00").getDay()===0 ? "日曜" : "";
+}
+
+/* ---- 月の日報を書きこむ（送信アプリ nippo.html の txMonth と同じ） ----
+   change(rows) に、その月の最新の行の並びを渡す。新しい並びを返すと書く。
+   書く直前に別の人が書きこんでいたら、Firebase が最新の中身で change をやりなおすので、その人の分は消えない。
+   rows と updatedAt を一緒に書く。ほかの項目はそのまま残す */
+function rowsIn(cur){
+  const v = cur && cur.rows;
+  if(!v) return [];
+  return (Array.isArray(v) ? v : Object.keys(v).sort((a,b)=>a-b).map(k=>v[k])).filter(Boolean);
+}
+function txMonth(ym, change, stamp){
+  let ok = false;
+  return db.ref("nippo/"+ym).transaction(cur=>{
+    const next = change(rowsIn(cur));
+    ok = !!next;
+    if(next) return Object.assign({}, cur||{}, {rows:next, updatedAt:stamp});
+    if(cur===null) return null;
+  }, undefined, false).then(res=>res.committed && ok);
+}
+
+/* ================== データ ================== */
+let WORKERS = [], MATOME = {}, MONTHS = {};
+let gotW = false, gotM = false;
+let PLACE = "", ME = "";
+try{ PLACE = localStorage.getItem(PLACE_KEY) || ""; ME = localStorage.getItem(ME_KEY) || ""; }catch(e){}
+/* setupPlace＝はじめの画面でえらび中の場所。V＝ふだんの画面の中身 */
+let setupPlace = "";
+const V = { date:todayStr(), t:{h:USUAL, ot:0}, off:"", each:{} };
+
+/* その常駐先が付いている人（隠している人は出さない） */
+function members(p){
+  return WORKERS.filter(w=>w.active!==false && w.joch===p && w.name).map(w=>w.name).sort(byLen);
+}
+function isMatome(p){ return !!MATOME[p]; }
+function setupOk(){ return JOCH.indexOf(PLACE)>=0 && members(PLACE).indexOf(ME)>=0; }
+/* 送る人たち。まとめて送る場所なら、その場所の全員 */
+function targets(){ return isMatome(PLACE) ? members(PLACE) : [ME]; }
+function kindsOf(p){
+  const g = JOCH_GENBA.indexOf(p)>=0 ? "現場" : "工場";
+  return {wd:"平日"+g, hol:"休日"+g, ot:g+"残業"};
+}
+function isHol(d){ return !!redDayOf(d); }
+function maxHours(d){ return isHol(d) ? MAX_HOLIDAY : MAX_WEEKDAY; }
+/* その日に、かんたん日報で送ってある行 */
+function sentOf(d, names){
+  return (MONTHS[ymOf(d)]||[]).filter(r=>r.src==="joch" && r.d===d && names.indexOf(r.n)>=0);
+}
+/* 1人ぶんの中身を、短い文にする（例：平日 6.0時間＋残業1.5／有給） */
+function sumTx(e, d){
+  if(e.off) return e.off;
+  const p = [];
+  if(e.h) p.push((isHol(d)?"休日":"平日")+" "+f1(e.h)+"時間");
+  if(e.ot) p.push("残業"+f1(e.ot));
+  return p.join("＋") || "0時間";
+}
+/* 送ってある行を、上と同じ形にもどす */
+function rowEntry(r){
+  if(r.off) return {off:r.offReason||"休み"};
+  const h = r.h || {}, k = kindsOf(r.j||PLACE);
+  return {h:(h[k.wd]||0)+(h[k.hol]||0), ot:h[k.ot]||0};
+}
+
+/* ================== 読みこみ ================== */
+db.ref("master/workers").on("value", s=>{ WORKERS = Object.values(s.val()||{}); gotW = true; onData(); });
+db.ref("master/jochMatome").on("value", s=>{ MATOME = s.val()||{}; gotM = true; onData(); });
+/* 送ったかどうかを見るため、1週間前から今日までの月だけ読む */
+[...new Set([ymOf(addDays(todayStr(), -BACK_DAYS)), ymOf(todayStr())])].forEach(ym=>{
+  db.ref("nippo/"+ym+"/rows").on("value", s=>{ MONTHS[ym] = rowsIn({rows:s.val()}); renderMain(); });
+});
+function onData(){
+  if(!gotW || !gotM) return;
+  if(isOn("scLoad")){ if(setupOk()) goMain(); else goPlace(); return; }
+  if(isOn("scPlace")) renderPlace();
+  if(isOn("scMatome")) renderMatome();
+  if(isOn("scName")) renderName();
+  renderMain();
+}
+
+/* ================== 画面 ================== */
+const SCREENS = ["scLoad","scPlace","scMatome","scName","scMain","scTime","scOff","scEach","scDone"];
+function show(id){
+  SCREENS.forEach(x=>document.getElementById(x).classList.toggle("on", x===id));
+  window.scrollTo(0,0);
+}
+function isOn(id){ return document.getElementById(id).classList.contains("on"); }
+
+/* ---- はじめの1回 ---- */
+function goPlace(){ show("scPlace"); renderPlace(); }
+function renderPlace(){
+  document.getElementById("placeList").innerHTML = JOCH.map(p=>
+    '<button class="pbtn" data-p="'+esc(p)+'">'+esc(p)+'</button>').join("");
+  document.querySelectorAll("#placeList .pbtn").forEach(b=>{ b.onclick = ()=>pickPlace(b.dataset.p); });
+  /* もう決めてあれば、やめて戻れる */
+  document.getElementById("placeCancel").style.display = setupOk() ? "block" : "none";
+}
+function pickPlace(p){
+  setupPlace = p;
+  if(isMatome(p)){ show("scMatome"); renderMatome(); } else goName();
+}
+function renderMatome(){
+  const ms = members(setupPlace);
+  document.getElementById("matomePlace").textContent = setupPlace;
+  document.getElementById("matomeTtl").textContent = "この場所は "+ms.length+"人分を まとめて送ります";
+  document.getElementById("matomeList").innerHTML = ms.length
+    ? ms.map(n=>'<div>'+esc(n)+'</div>').join("")
+    : '<div class="note" style="margin:0">この場所の人が、まだ名簿にいません。事務所に言ってください。</div>';
+}
+function goName(){ show("scName"); renderName(); }
+function renderName(){
+  const ms = members(setupPlace);
+  document.getElementById("namePlace").textContent = setupPlace;
+  document.getElementById("nameTtl").textContent = isMatome(setupPlace) ? "送る人は？" : "あなたの なまえは？";
+  document.getElementById("nameList").innerHTML = ms.length
+    ? ms.map(n=>'<button class="pbtn" data-n="'+esc(n)+'">'+esc(n)+'</button>').join("")
+    : '<div class="note" style="grid-column:1/-1;margin:0">この場所の人が、まだ名簿にいません。事務所に言ってください。</div>';
+  document.querySelectorAll("#nameList .pbtn").forEach(b=>{ b.onclick = ()=>pickName(b.dataset.n); });
+}
+function pickName(n){
+  PLACE = setupPlace; ME = n;
+  try{ localStorage.setItem(PLACE_KEY, PLACE); localStorage.setItem(ME_KEY, ME); }catch(e){}
+  V.date = todayStr();
+  goMain();
+}
+
+/* ---- ふだんの画面 ---- */
+function goMain(){
+  if(!setupOk()){ goPlace(); return; }
+  show("scMain"); renderMain();
+}
+function moveDay(n){
+  const to = addDays(V.date, n), t = todayStr();
+  if(to > t || to < addDays(t, -BACK_DAYS)) return;
+  V.date = to; renderMain();
+}
+function renderMain(){
+  if(!isOn("scMain")) return;
+  if(!setupOk()){ goPlace(); return; }
+  const t = todayStr(), d = V.date;
+  document.getElementById("mPlace").textContent = PLACE;
+  document.getElementById("mName").textContent = ME+" さん";
+  document.getElementById("dLabel").innerHTML = esc(dLabel(d))+(d===t ? '<small>今日</small>' : '');
+  document.getElementById("dPrev").disabled = d <= addDays(t, -BACK_DAYS);
+  document.getElementById("dNext").disabled = d >= t;
+  const rd = redDayOf(d), kd = document.getElementById("dKind");
+  kd.textContent = !rd ? "平日" : (rd==="日曜" ? "日曜なので 休日で送ります" : "祝日（"+rd+"）なので 休日で送ります");
+  kd.className = "dkind"+(rd ? " hol" : "");
+
+  const ts = targets(), many = isMatome(PLACE);
+  const sent = sentOf(d, ts);
+  document.getElementById("mSent").innerHTML = sent.length
+    ? '<div class="sent">この日は もう送ってあります<div class="s">'+
+        sent.map(r=>(many ? esc(r.n)+"　" : "")+esc(sumTx(rowEntry(r), d))).join("<br>")+'</div></div>'
+    : "";
+  document.getElementById("mUsual").innerHTML = many
+    ? (ts.length===2 ? "2人とも" : ts.length+"人とも")+" いつもどおり<span class=\"s\">"+USUAL+"時間で 送る</span>"
+    : "いつもどおり<span class=\"s\">"+USUAL+"時間で 送る</span>";
+  document.getElementById("mSubs").innerHTML = many
+    ? '<button class="sub" style="margin-top:12px" onclick="goEach()">時間・休みが ちがう日は こちら</button>'
+    : '<div class="row2"><button class="sub" onclick="goTime()">時間をかえる</button>'+
+      '<button class="sub" onclick="goOff()">休み</button></div>';
+
+  /* 今週（月〜土）に送った日 */
+  const now = new Date(t+"T00:00:00");
+  const mon = addDays(t, -((now.getDay()+6)%7));
+  let wk = "";
+  for(let i=0; i<6; i++){
+    const x = addDays(mon, i);
+    wk += '<div class="c'+(x===t ? " today" : "")+'"><div class="w">'+WD[(i+1)%7]+'</div>'+
+      '<div class="m">'+(sentOf(x, ts).length ? "✓" : "")+'</div></div>';
+  }
+  document.getElementById("mWeek").innerHTML = wk;
+}
+function dateHead(){
+  const rd = redDayOf(V.date);
+  return esc(dLabel(V.date))+' <span>'+(rd ? "休日" : "平日")+'</span>';
+}
+
+/* ---- 時間・残業の ＋− ---- */
+function stepHtml(id, label, v, max, hint){
+  return '<div class="stp"><div class="l">'+label+'</div><div class="ctl">'+
+    '<button data-s="'+id+'" data-d="-1"'+(v<=0 ? " disabled" : "")+'>−</button>'+
+    '<div class="v">'+f1(v)+'<small>時間</small></div>'+
+    '<button data-s="'+id+'" data-d="1"'+(v>=max ? " disabled" : "")+'>＋</button></div>'+
+    (hint ? '<div class="hint">'+hint+'</div>' : '')+'</div>';
+}
+function bump(v, dir, max){ return Math.max(0, Math.min(max, Math.round((v + dir*STEP)*10)/10)); }
+function timeHint(){
+  return isHol(V.date) ? "日曜・祝日は "+MAX_HOLIDAY+"時間まで"
+    : "平日は "+MAX_WEEKDAY+"時間まで。こえる分は「残業」に入れます";
+}
+
+/* ---- 時間をかえる（1人） ---- */
+function goTime(){ V.t = {h:USUAL, ot:0}; show("scTime"); renderTime(); }
+function renderTime(){
+  document.getElementById("tDate").innerHTML = dateHead();
+  document.getElementById("tSteps").innerHTML =
+    stepHtml("h", "時間", V.t.h, maxHours(V.date), timeHint())+
+    stepHtml("ot", "残業", V.t.ot, MAX_OT, "");
+  document.querySelectorAll("#tSteps [data-s]").forEach(b=>{
+    b.onclick = ()=>{
+      const k = b.dataset.s;
+      V.t[k] = bump(V.t[k], Number(b.dataset.d), k==="h" ? maxHours(V.date) : MAX_OT);
+      renderTime();
+    };
+  });
+  document.getElementById("tSend").disabled = !(V.t.h + V.t.ot);
+}
+
+/* ---- 休み（1人） ---- */
+function goOff(){ V.off = ""; show("scOff"); renderOff(); }
+function renderOff(){
+  document.getElementById("oDate").innerHTML = dateHead();
+  document.getElementById("oList").innerHTML = OFF_REASONS.map(r=>
+    '<button class="rbtn'+(V.off===r ? " on" : "")+'" data-r="'+esc(r)+'">'+esc(r)+'</button>').join("");
+  document.querySelectorAll("#oList .rbtn").forEach(b=>{ b.onclick = ()=>{ V.off = b.dataset.r; renderOff(); }; });
+  document.getElementById("oSend").disabled = !V.off;
+}
+
+/* ---- 1人ずつ（まとめて送る場所） ---- */
+function goEach(){
+  V.each = {};
+  members(PLACE).forEach(n=>{ V.each[n] = {mode:"usual", h:USUAL, ot:0, off:""}; });
+  show("scEach"); renderEach();
+}
+function eachOk(x){
+  if(x.mode==="off") return !!x.off;
+  if(x.mode==="time") return (x.h + x.ot) > 0;
+  return true;
+}
+function renderEach(){
+  const ms = members(PLACE);
+  document.getElementById("eDate").innerHTML = dateHead();
+  document.getElementById("eList").innerHTML = ms.map(n=>{
+    const x = V.each[n] = V.each[n] || {mode:"usual", h:USUAL, ot:0, off:""};
+    const mb = (m, l)=>'<button class="'+(x.mode===m ? "on" : "")+'" data-n="'+esc(n)+'" data-m="'+m+'">'+l+'</button>';
+    let body = "";
+    if(x.mode==="time"){
+      body = stepHtml("h|"+n, "時間", x.h, maxHours(V.date), timeHint())+stepHtml("ot|"+n, "残業", x.ot, MAX_OT, "");
+    } else if(x.mode==="off"){
+      body = '<div class="rgrid">'+OFF_REASONS.map(r=>
+        '<button class="rbtn'+(x.off===r ? " on" : "")+'" data-n="'+esc(n)+'" data-r="'+esc(r)+'">'+esc(r)+'</button>').join("")+'</div>'+
+        (x.off ? "" : '<div class="need">休みの わけを えらんでください</div>');
+    }
+    return '<div class="pc"><div class="nm">'+esc(n)+'</div>'+
+      '<div class="modes">'+mb("usual","いつも<br>どおり")+mb("time","時間")+mb("off","休み")+'</div>'+body+'</div>';
+  }).join("");
+  document.querySelectorAll("#eList [data-m]").forEach(b=>{
+    b.onclick = ()=>{ V.each[b.dataset.n].mode = b.dataset.m; renderEach(); };
+  });
+  document.querySelectorAll("#eList [data-r]").forEach(b=>{
+    b.onclick = ()=>{ V.each[b.dataset.n].off = b.dataset.r; renderEach(); };
+  });
+  document.querySelectorAll("#eList [data-s]").forEach(b=>{
+    b.onclick = ()=>{
+      const p = b.dataset.s.split("|"), k = p[0], x = V.each[p[1]];
+      x[k] = bump(x[k], Number(b.dataset.d), k==="h" ? maxHours(V.date) : MAX_OT);
+      renderEach();
+    };
+  });
+  const btn = document.getElementById("eSend");
+  btn.textContent = ms.length+"人分 送る";
+  btn.disabled = !ms.length || !ms.every(n=>eachOk(V.each[n]));
+}
+
+/* ================== 送る ================== */
+function sendUsual(){ send(targets().map(n=>({n:n, e:{h:USUAL, ot:0}}))); }
+function sendTime(){ if(V.t.h + V.t.ot) send([{n:ME, e:{h:V.t.h, ot:V.t.ot}}]); }
+function sendOff(){ if(V.off) send([{n:ME, e:{off:V.off}}]); }
+function sendEach(){
+  const ms = members(PLACE);
+  if(!ms.every(n=>eachOk(V.each[n]))) return;
+  send(ms.map(n=>{
+    const x = V.each[n];
+    return {n:n, e: x.mode==="off" ? {off:x.off} : x.mode==="time" ? {h:x.h, ot:x.ot} : {h:USUAL, ot:0}};
+  }));
+}
+/* 送る行。形は送信アプリ（nippo.html）の buildRows と同じ。
+   注番は無し、件名と区分は常駐先、職長（f）は空（職長手当に入らない）。src:"joch" で、かんたん日報の行と分かる */
+function buildRow(n, e, d, batch, stamp){
+  const w = WORKERS.find(x=>x.name===n) || {};
+  const k = kindsOf(PLACE), h = {};
+  if(!e.off){
+    if(e.h)  h[isHol(d) ? k.hol : k.wd] = e.h;
+    if(e.ot) h[k.ot] = e.ot;
+  }
+  return {d:d, n:n, k:w.kubun||"", shozoku:w.shozoku||"",
+    no:"", j:PLACE, kubun:PLACE, f:"", by:ME,
+    h:h, off:e.off ? 1 : 0, offReason:e.off||"",
+    s:0, y:0, late:0, early:0, fa:0,
+    batch:batch, at:stamp, src:"joch"};
+}
+/* list＝[{n:名前, e:{h, ot} か {off}}]。前に送ってあれば、入れかえてよいか先に聞く */
+let repThen = null;
+function send(list){
+  const d = V.date, names = list.map(x=>x.n);
+  const go = ()=>doSend(d, list, names);
+  if(sentOf(d, names).length){ repThen = go; document.getElementById("mRep").classList.add("on"); }
+  else go();
+}
+function closeRep(){ document.getElementById("mRep").classList.remove("on"); repThen = null; }
+document.getElementById("repGo").onclick = ()=>{ const go = repThen; closeRep(); if(go) go(); };
+function doSend(d, list, names){
+  const busy = document.getElementById("busy");
+  if(busy.classList.contains("on")) return;
+  busy.classList.add("on");
+  const now = new Date();
+  const stamp = now.getFullYear()+"/"+(now.getMonth()+1)+"/"+now.getDate()+" "+
+    String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+  const batch = "b"+now.getTime();
+  const rows = list.map(x=>buildRow(x.n, x.e, d, batch, stamp));
+  /* その人・その日の、前にかんたん日報で送った行は、新しい行と入れかえる（同じ transaction の中で） */
+  txMonth(ymOf(d), cur=>cur.filter(r=>!(r.src==="joch" && r.d===d && names.indexOf(r.n)>=0)).concat(rows), stamp)
+    .then(()=>{
+      busy.classList.remove("on");
+      document.getElementById("doneD").textContent = dLabel(d)+"　"+PLACE;
+      document.getElementById("doneL").innerHTML = list.map(x=>
+        '<div>'+(list.length>1 ? esc(x.n)+"　" : "")+esc(sumTx(x.e, d))+'</div>').join("");
+      show("scDone");
+    })
+    .catch(e=>{
+      busy.classList.remove("on");
+      alert("送れませんでした。電波のよいところで、もう一度 おしてください。\n（"+e.message+"）");
+    });
+}
+</script>
+</body>
+</html>

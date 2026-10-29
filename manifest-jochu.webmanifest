@@ -1,0 +1,14 @@
+{
+  "id": "yotsuba-jochu",
+  "name": "かんたん日報｜よつば建設工業",
+  "short_name": "かんたん日報",
+  "start_url": "jochu.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f4fae",
+  "icons": [
+    { "src": "icons/nippo-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/nippo-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

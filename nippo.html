@@ -838,7 +838,9 @@ db.ref("master").on("value", snap=>{
   JOBS=Object.values(v.jobs||{});
   CLOSED=v.closed?Object.values(v.closed):[];
   TEAMS={}; Object.values(v.teams||{}).forEach(t=>{ if(t&&t.name) TEAMS[t.name]=t.members||[]; });
-  STATIONED=new Set(Object.keys(TEAMS).reduce((a,k)=>a.concat(TEAMS[k]),[]));
+  /* 班の常任と、常駐先（joch）が付いた人は「自社」の名簿から隠す（「他の人を追加」からは呼べる） */
+  STATIONED=new Set(Object.keys(TEAMS).reduce((a,k)=>a.concat(TEAMS[k]),[])
+    .concat(WORKERS.filter(w=>w.joch).map(w=>w.name)));
   ready=true;
   if(!S.sel.length) applyTeam();
   renderAll();
@@ -851,7 +853,8 @@ db.ref("nippo").on("value", snap=>{
   const last={}, freeRows=[], sd=new Set();
   allRows().forEach(r=>{
     if(r.no&&r.d&&(!last[r.no]||r.d>last[r.no])) last[r.no]=r.d;
-    if(!r.no&&r.j) freeRows.push(r);
+    /* かんたん日報（src:"joch"）の行は入れない。常駐先の名前が並んでしまうため */
+    if(!r.no&&r.j&&r.src!=="joch") freeRows.push(r);
     if(r.d) sd.add(r.d);
   });
   /* 注番なしの件名：新しい日付→新しい送信時刻の順に並べ、同じ件名は1つにして上から30個 */
