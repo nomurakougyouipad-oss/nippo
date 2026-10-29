@@ -1314,6 +1314,7 @@ function openChkDel(key){
   const f = findRow(key);
   if(!f.row){ alert("行が見つかりませんでした"); return; }
   cdKey = key;
+  cdSig = rowSig(f.row);
   const r = f.row;
   document.getElementById("cdWho").textContent = r.n+" "+dStr(r.d);
   document.getElementById("cdJob").textContent = (r.no ? r.no+" " : "")+(r.j||"");
@@ -1324,13 +1325,14 @@ function openChkDel(key){
 }
 function hideChkDel(){ document.getElementById("mChkDel").classList.remove("on"); cdKey = null; }
 function doChkDel(){
-  const key = cdKey;
+  const key = cdKey, sig = cdSig;
   const why = document.getElementById("cdWhy").value || "";
   hideChkDel();
   if(!key) return;
   /* openDel と同じ下ごしらえをして、既存の削除を呼ぶ。
      理由は🗑の画面の欄（dWhy）に移すと、doDelete がそのまま修正履歴に残す（空なら「理由なし」） */
   dTarget = key;
+  dSig = sig;
   document.getElementById("dWhy").value = why;
   doDelete();
 }
@@ -2373,44 +2375,51 @@ function doFreeFix(){
   }
 
   /* その件名で送られた注番なしの行を、月ごとに書き換える。
-     休みの行も同じ送信の一部なので、一緒に書き換える */
+     休みの行も同じ送信の一部なので、一緒に書き換える。
+     月ごとに transaction で、書く直前の最新の並びを書き換える（そのあいだに届いた日報を消さないため） */
   const target = g.j || "";
-  const payload = {};
-  let hit = 0;
-  const per = [];
-  Object.keys(ALLDATA).forEach(m=>{
-    const rows = rowsOf(m);
+  const fix = rows=>{
     let c = 0;
     const next = rows.map(r=>{
       if(r.no || (r.j||"")!==target) return r;
-      c++; hit++;
+      c++;
       return Object.assign({}, r, {no:nno, j:name});
     });
-    if(c){
-      payload["nippo/"+m+"/rows"] = next;
-      payload["nippo/"+m+"/updatedAt"] = stampNow();
-      per.push(m.replace("-","年")+"月"+c+"行");
-    }
-  });
-  if(!hit){ alert("書き換える日報が見つかりませんでした。画面を読み直してください。"); return; }
-
-  /* 新しい注番だけ、注番マスタにも登録する（すでにある注番は二重に登録しない） */
-  if(mode==="new"){
-    payload["master/jobs/"+no] = {no:no, name:name, owner:(document.getElementById("mfOwner").value||"その他").trim(),
-      start:start, end:end, fixed:!!mfFixed, active:true};
-  }
+    return {c:c, rows:next};
+  };
+  const ms = Object.keys(ALLDATA).sort().filter(m=>fix(rowsOf(m)).c);
+  if(!ms.length){ alert("書き換える日報が見つかりませんでした。画面を読み直してください。"); return; }
 
   const why = (document.getElementById("mfWhy").value||"").trim();
-  const what = "注番なしの日報を直した　「"+target+"」→ "+
+  /* 月ごとに書き換えた行の数（書いたときの最新の並びで数える） */
+  const cnt = {};
+  const what = ()=>"注番なしの日報を直した　「"+target+"」→ "+
     (nno ? nno+"「"+name+"」" : "注番なしのまま「"+name+"」")+
-    "（"+per.join("・")+"）"+(mode==="new" ? "／注番マスタに新規登録" : "")+
+    "（"+ms.filter(m=>cnt[m]).map(m=>m.replace("-","年")+"月"+cnt[m]+"行").join("・")+"）"+
+    (mode==="new" ? "／注番マスタに新規登録" : "")+
     (mode==="pick" ? "／登録済みの注番から選択" : "");
 
   document.getElementById("mfGo").disabled = true;
   if(needAskWho()) rememberWho(by);
-  db.ref().update(payload)
-    .then(()=>pushLog(what, why, WHO))
-    .then(()=>{ closeFreeFix(); render(); })
+  const now = stampNow();
+  /* 新しい注番だけ、注番マスタにも登録する（すでにある注番は二重に登録しない）。
+     日報より先に登録しておく。日報を書き換える途中で失敗しても、「すでにある注番から選ぶ」でやりなおせるように */
+  const reg = mode==="new"
+    ? db.ref("master/jobs/"+no).set({no:no, name:name, owner:(document.getElementById("mfOwner").value||"その他").trim(),
+        start:start, end:end, fixed:!!mfFixed, active:true})
+    : Promise.resolve();
+  reg.then(()=>Promise.all(ms.map(m=>txMonth(m, cur=>{
+      const x = fix(cur);
+      cnt[m] = x.c;
+      return x.c ? x.rows : undefined;
+    }, now))))
+    .then(()=>{
+      if(!ms.some(m=>cnt[m])){
+        alert("書き換える日報が見つかりませんでした。画面を読み直してください。");
+        closeFreeFix(); render(); return;
+      }
+      return pushLog(what(), why, WHO).then(()=>{ closeFreeFix(); render(); });
+    })
     .catch(e=>{ alert("直せませんでした: "+e.message); syncFreeFix(); });
 }
 document.getElementById("regFreeMonth").addEventListener("change", e=>{
@@ -2484,11 +2493,46 @@ function doCloseJob(){
   db.ref("master/closed").set(CLOSED.concat([mTarget])).then(hideModal);
 }
 
-/* ---- 修正・削除 ---- */
-function findRow(key){
+/* ---- 修正・削除 ----
+   日報は月ごとに1つの並び（nippo/年-月/rows）。「まるごと読む → 手元で直す → まるごと書く」だと、
+   そのあいだにスマホから届いた日報などが上書きで消えてしまう。なので Firebase の transaction で書く。
+   行は「何番目」ではさがさない。書く直前の最新の並びで、キー（送信のまとまり・名前・日付・注番・件名）で
+   さがしなおす。見つからない・開いたあとで中身が変わっていたら、書かずにやめる */
+const GONE_MSG = "ほかの人が先に直しました。画面を開きなおしてください";
+/* 直す・消す画面を開いたときの、その行の中身（rowSig）。保存の前に、変わっていないかを見る */
+let eSig = "", dSig = "", cdSig = "";
+function rowsIn(cur){
+  const v = cur && cur.rows;
+  if(!v) return [];
+  return (Array.isArray(v) ? v : Object.keys(v).sort((a,b)=>a-b).map(k=>v[k])).filter(Boolean);
+}
+/* 月の日報を書きこむ（日報アプリ nippo.html の txMonth と同じ）。
+   change(rows) に、その月の最新の行の並びを渡す。新しい並びを返すと書く。何も返さなければ書かずにやめる。
+   書く直前に別の人が書きこんでいたら、Firebase が最新の中身で change をやりなおすので、その人の分は消えない。
+   change は何回呼ばれてもよいように作ること（渡された並びの外のものを書き換えない）。
+   rows と updatedAt を一緒に書く。ほかの項目（yakuin など）はそのまま残す。書けたら true、やめたら false */
+function txMonth(ym, change, stamp){
+  let ok = false;
+  return db.ref("nippo/"+ym).transaction(cur=>{
+    const next = change(rowsIn(cur));
+    ok = !!next;
+    if(next) return Object.assign({}, cur||{}, {rows:next, updatedAt:stamp});
+    /* 手元にまだ何も無いときは、やめずに「空のまま」で Firebase に確かめてもらう
+       （本当は中身があれば、最新の中身でやりなおしになる） */
+    if(cur===null) return null;
+  }, undefined, false).then(res=>res.committed && ok);
+}
+/* 行の中身を、項目の並び順に関係なく比べられる文字にする */
+function rowSig(v){
+  if(Array.isArray(v)) return "["+v.map(rowSig).join(",")+"]";
+  if(v && typeof v==="object")
+    return "{"+Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+rowSig(v[k])).join(",")+"}";
+  return JSON.stringify(v);
+}
+function findRow(key){ return findRowIn(rowsOf(curMonth), key); }
+function findRowIn(rows, key){
   const p = String(key).split("|");
   const batch=p[0], name=p[1], date=p[2], no=p[3]||"", j=p[4]||"";
-  const rows = rowsOf(curMonth);
   let idx = -1;
   for(let i=0;i<rows.length;i++){
     const r=rows[i];
@@ -2552,6 +2596,7 @@ function openEdit(key){
   const f = findRow(key);
   if(!f.row){ alert("行が見つかりませんでした"); return; }
   eTarget = key;
+  eSig = rowSig(f.row);
   const r = f.row, h = r.h || {};
   document.getElementById("eWho").textContent = r.n + "　" + dStr(r.d);
   document.getElementById("eJob").textContent = rowSummary(r);
@@ -2648,12 +2693,51 @@ function syncEditForm(){
 }
 function hideEdit(){ document.getElementById("mEdit").classList.remove("on"); eTarget=null; }
 
+/* 直す画面の中身（ed）を、月の並び（src）にあてはめた新しい並びを作る。src の行は書き換えない。
+   キーの行が見つからない・開いたあとで中身が変わっていたら null。
+   transaction の中で、最新の並びに対して何回呼ばれてもよいように、画面からは読まない。
+   返すもの：{rows:新しい並び, targets:日付などを変えた行の番号, after:直したあとの職長手当（無ければ null）} */
+function applyEdit(src, ed){
+  const rows = src.slice();
+  const f = findRowIn(rows, ed.key);
+  if(!f.row || rowSig(f.row)!==ed.sig) return null;
+  const r = f.row;
+  /* 職長名は1回の送信でみんな同じなので、いつもこの送信の全員に反映する
+     （「送った人」は別の項目（by）で、ここでは変えない） */
+  if(ed.foremanChanged && r.batch){
+    batchIdxOf(rows, r.batch).forEach(i=>{ rows[i] = Object.assign({}, rows[i], {f:ed.nf}); });
+  }
+  /* 日付・注番・件名・区分は、チェックが入っていれば全員に */
+  const targets = (ed.batchAll && r.batch) ? batchIdxOf(rows, r.batch) : [f.idx];
+  targets.forEach(i=>{
+    rows[i] = Object.assign({}, rows[i], {d:ed.nd, no:ed.nno, j:ed.nj, kubun:ed.nk, f:ed.nf});
+  });
+  rows[f.idx] = Object.assign({}, rows[f.idx],
+    {off:ed.noff, offReason:ed.noffR, s:ed.ns, y:ed.ny, h:ed.noff?{}:ed.nh, late:ed.late, early:ed.early});
+
+  /* --- 職長手当 --- */
+  /* 手で直したときだけ faE を立てる。そうでなければ自動計算が付いてくる */
+  let after = null;
+  if(r.batch && batchIdxOf(rows, r.batch).length && !r.kan){
+    if(ed.allowIn === ""){
+      batchIdxOf(rows, r.batch).forEach(i=>{
+        const c = Object.assign({}, rows[i]); delete c.fa; delete c.faE; rows[i] = c;
+      });
+    } else {
+      const v = Math.max(0, Math.min(99, parseFloat(ed.allowIn)||0));
+      if(Math.abs(v - ed.allowPrev) > 0.001) setAllow(rows, r.batch, v);
+    }
+    refreshAllow(rows, r.batch);
+    after = batchAllow(batchIdxOf(rows, r.batch).map(i=>rows[i]));
+  }
+  return {rows:rows, targets:targets, after:after};
+}
+
 function saveEdit(){
   if(!eTarget){ hideEdit(); return; }
   const f = findRow(eTarget);
-  if(!f.row){ alert("行が見つかりませんでした"); hideEdit(); return; }
+  if(!f.row || rowSig(f.row)!==eSig){ alert(GONE_MSG); hideEdit(); return; }
   const r = f.row;
-  const rows = rowsOf(curMonth).slice();
   const changes = [];
 
   /* --- 送信全体（batch）の項目 --- */
@@ -2706,62 +2790,62 @@ function saveEdit(){
   }
 
   /* --- 反映 --- */
-  /* 職長名は1回の送信でみんな同じなので、いつもこの送信の全員に反映する
-     （「送った人」は別の項目（by）で、ここでは変えない） */
-  if(foremanChanged && r.batch){
-    batchIdxOf(rows, r.batch).forEach(i=>{ rows[i] = Object.assign({}, rows[i], {f:nf}); });
-  }
-  /* 日付・注番・件名・区分は、チェックが入っていれば全員に */
-  const targets = (eBatchAll && r.batch) ? batchIdxOf(rows, r.batch) : [f.idx];
-  targets.forEach(i=>{
-    rows[i] = Object.assign({}, rows[i], {d:nd, no:nno, j:nj, kubun:nk, f:nf});
-  });
-  rows[f.idx] = Object.assign({}, rows[f.idx],
-    {off:noff, offReason:noffR, s:ns, y:ny, h:noff?{}:nh, late:late, early:early});
-
-  /* --- 職長手当 --- */
-  /* 手で直したときだけ faE を立てる。そうでなければ自動計算が付いてくる */
-  const allowIn = (document.getElementById("eAllow").value||"").trim();
-  if(r.batch && batchIdxOf(rows, r.batch).length && !r.kan){
-    if(allowIn === ""){
-      batchIdxOf(rows, r.batch).forEach(i=>{
-        const c = Object.assign({}, rows[i]); delete c.fa; delete c.faE; rows[i] = c;
-      });
-    } else {
-      const v = Math.max(0, Math.min(99, parseFloat(allowIn)||0));
-      if(Math.abs(v - eAllowPrev) > 0.001) setAllow(rows, r.batch, v);
-    }
-    refreshAllow(rows, r.batch);
-    const after = batchAllow(batchIdxOf(rows, r.batch).map(i=>rows[i]));
-    if(Math.abs(after - eAllowPrev) > 0.001)
-      changes.push("職長手当 "+allowTx(eAllowPrev)+" → "+allowTx(after));
-  }
-
-  if(!changes.length){ hideEdit(); return; }
+  /* 画面から読んだ中身は、ここで1つにまとめる（あてはめる applyEdit は画面を読まない） */
+  const ed = {key:eTarget, sig:eSig, batchAll:eBatchAll, allowPrev:eAllowPrev,
+    nd:nd, nno:nno, nj:nj, nk:nk, nf:nf, foremanChanged:foremanChanged,
+    noff:noff, noffR:noffR, ns:ns, ny:ny, nh:nh, late:late, early:early,
+    allowIn:(document.getElementById("eAllow").value||"").trim()};
+  /* 職長手当が変わるかは、あてはめてみないと分からない */
+  const allowLine = x=>(x.after!==null && Math.abs(x.after - ed.allowPrev) > 0.001)
+    ? ["職長手当 "+allowTx(ed.allowPrev)+" → "+allowTx(x.after)] : [];
+  /* まず手元の並びであてはめて、直すところがあるかを見る。書くときは最新の並びであてはめなおす */
+  let last = applyEdit(rowsOf(curMonth), ed);
+  if(!last){ alert(GONE_MSG); hideEdit(); return; }
+  if(!changes.concat(allowLine(last)).length){ hideEdit(); return; }
 
   const why = (document.getElementById("eWhy").value||"").trim();
   const who = r.n;
   const oldDate = r.d;
-  const moveTo = ymOf(nd);
-  const scope = (targets.length>1) ? "（この送信 "+targets.length+"人分）" : "";
-  const what = who+" "+dStr(oldDate)+"　"+changes.join("／")+scope;
+  const ym = curMonth, moveTo = ymOf(nd), now = stampNow();
+  /* 修正履歴の文。書いたときの並び（last）で作る */
+  const what = ()=>who+" "+dStr(oldDate)+"　"+changes.concat(allowLine(last)).join("／")+
+    ((last.targets.length>1) ? "（この送信 "+last.targets.length+"人分）" : "");
 
-  /* 月をまたぐときは、動かす行を別の月へ移す */
-  const movers = targets.filter(i=>ymOf(rows[i].d)!==curMonth);
+  /* 元の月から消せなかったとき（月をまたぐときだけ）のわけ */
+  let half = null;
   let p;
-  if(!movers.length){
-    p = db.ref("nippo/"+curMonth+"/rows").set(rows);
+  if(moveTo===ym){
+    p = txMonth(ym, cur=>{
+      const x = applyEdit(cur, ed);
+      if(!x) return;
+      last = x;
+      return x.rows;
+    }, now);
   } else {
-    const moved = movers.map(i=>rows[i]);
-    const stay = rows.filter((_,i)=>movers.indexOf(i)<0);
-    p = db.ref("nippo/"+moveTo+"/rows").once("value").then(s=>{
-      const cur = (s.val()||[]).filter(Boolean);
-      return db.ref("nippo/"+moveTo).update({rows:cur.concat(moved), updatedAt:stampNow()});
-    }).then(()=>db.ref("nippo/"+curMonth+"/rows").set(stay));
+    /* 月をまたぐときは、日付を変えた行（targets）を別の月へ移す。
+       先に新しい月へ足して、あとで元の月から消す。途中で失敗しても、日報が消えるのではなく
+       2重になるだけにするため（2重なら朝のチェックや明細で気づける） */
+    const moved = last.targets.map(i=>last.rows[i]);
+    p = txMonth(moveTo, cur=>cur.concat(moved), now)
+      .then(()=>txMonth(ym, cur=>{
+          const x = applyEdit(cur, ed);
+          if(!x) return;
+          last = x;
+          return x.rows.filter((_,i)=>x.targets.indexOf(i)<0);
+        }, now)
+        .then(ok=>{ if(!ok) half = new Error(GONE_MSG); }, e=>{ half = e; }))
+      .then(()=>true);
   }
 
-  p.then(()=>pushLog(what, why))
-   .then(()=>{ hideEdit(); render(); })
+  p.then(ok=>{
+     if(!ok){ alert(GONE_MSG); hideEdit(); render(); return; }
+     return pushLog(what()+(half ? "　※元の月の行を消せませんでした（2重になっているかもしれません）" : ""), why)
+       .then(()=>{
+         hideEdit(); render();
+         if(half) alert("別の月へは入れましたが、元の月の行を消せませんでした。"+
+           "同じ行が2つあるかもしれないので、明細一覧で確かめてください。（"+half.message+"）");
+       });
+   })
    .catch(e=>alert("保存に失敗しました: "+e.message));
 }
 
@@ -2770,6 +2854,7 @@ function openDel(key){
   const f = findRow(key);
   if(!f.row){ alert("行が見つかりませんでした"); return; }
   dTarget = key;
+  dSig = rowSig(f.row);
   const r = f.row;
   document.getElementById("dWho").textContent = r.n + "　" + dStr(r.d);
   document.getElementById("dJob").textContent = rowSummary(r);
@@ -2788,19 +2873,28 @@ function openDel(key){
 function hideDel(){ document.getElementById("mDel").classList.remove("on"); dTarget=null; }
 function doDelete(){
   if(!dTarget){ hideDel(); return; }
-  const f = findRow(dTarget);
-  if(!f.row){ alert("行が見つかりませんでした"); hideDel(); return; }
+  const key = dTarget, sig = dSig;
+  const f = findRow(key);
+  if(!f.row || rowSig(f.row)!==sig){ alert(GONE_MSG); hideDel(); return; }
   const r = f.row;
-  const rows = rowsOf(curMonth).slice();
-  rows.splice(f.idx, 1);
-  const v = refreshAllow(rows, r.batch);
   const why = (document.getElementById("dWhy").value||"").trim();
-  const what = r.n+" "+dStr(r.d)+"　削除（"+rowSummary(r)+"　"+
-    (r.off ? (r.offReason||"休み") : f1(netOf(r))+"時間")+"）"+
-    (v!==null ? "／職長手当を"+allowTx(v)+"に計算し直し" : "");
-  db.ref("nippo/"+curMonth+"/rows").set(rows)
-    .then(()=>pushLog(what, why))
-    .then(()=>{ hideDel(); render(); })
+  /* 書く直前の最新の並びで、その行をさがしなおして消す。職長手当もその並びで計算し直す */
+  let v = null;
+  txMonth(curMonth, cur=>{
+    const g = findRowIn(cur, key);
+    if(!g.row || rowSig(g.row)!==sig) return;
+    const rows = cur.slice();
+    rows.splice(g.idx, 1);
+    v = refreshAllow(rows, r.batch);
+    return rows;
+  }, stampNow())
+    .then(ok=>{
+      if(!ok){ alert(GONE_MSG); hideDel(); render(); return; }
+      const what = r.n+" "+dStr(r.d)+"　削除（"+rowSummary(r)+"　"+
+        (r.off ? (r.offReason||"休み") : f1(netOf(r))+"時間")+"）"+
+        (v!==null ? "／職長手当を"+allowTx(v)+"に計算し直し" : "");
+      return pushLog(what, why).then(()=>{ hideDel(); render(); });
+    })
     .catch(e=>alert("削除に失敗しました: "+e.message));
 }
 

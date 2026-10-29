@@ -797,6 +797,40 @@ function pushLog(what, why, ym){
     ym:ym||curYm(), what:what, why:why||"（理由なし）" });
 }
 
+/* ---- 月の日報を書きこむ ----
+   「まるごと読む → 手元で足す・消す → まるごと書く」だと、そのあいだに別の人が書きこんだ分が
+   上書きで消えてしまう。なので Firebase の transaction で書く。
+   change(rows) に、その月の最新の行の並びを渡す。新しい並びを返すと書く。何も返さなければ書かずにやめる。
+   書く直前に別の人が書きこんでいたら、Firebase が最新の中身で change をやりなおすので、その人の分は消えない。
+   change は何回呼ばれてもよいように作ること（渡された並びの外のものを書き換えない）。
+   rows と updatedAt を一緒に書く。ほかの項目（yakuin など）はそのまま残す。
+   書けたら true、やめたら false */
+const GONE_MSG = "ほかの人が先に直しました。画面を開きなおしてください";
+function rowsIn(cur){
+  const v = cur && cur.rows;
+  if(!v) return [];
+  return (Array.isArray(v) ? v : Object.keys(v).sort((a,b)=>a-b).map(k=>v[k])).filter(Boolean);
+}
+function txMonth(ym, change, stamp){
+  let ok = false;
+  return db.ref("nippo/"+ym).transaction(cur=>{
+    const next = change(rowsIn(cur));
+    ok = !!next;
+    if(next) return Object.assign({}, cur||{}, {rows:next, updatedAt:stamp});
+    /* 手元にまだ何も無いときは、やめずに「空のまま」で Firebase に確かめてもらう
+       （本当は中身があれば、最新の中身でやりなおしになる） */
+    if(cur===null) return null;
+  }, undefined, false).then(res=>res.committed && ok);
+}
+/* 行の中身を、項目の並び順に関係なく比べられる文字にする（開いたあとで変わっていないかを見る） */
+function rowSig(v){
+  if(Array.isArray(v)) return "["+v.map(rowSig).join(",")+"]";
+  if(v && typeof v==="object")
+    return "{"+Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+rowSig(v[k])).join(",")+"}";
+  return JSON.stringify(v);
+}
+function batchSig(rows){ return rows.map(rowSig).sort().join("\n"); }
+
 /* ================== 読み込み ================== */
 db.ref("master").on("value", snap=>{
   const v=snap.val()||{};
@@ -1781,10 +1815,8 @@ function doSend(){
   const stamp=now.getFullYear()+"/"+(now.getMonth()+1)+"/"+now.getDate()+" "+hm;
   const batch="b"+now.getTime();
   const rows=buildRows(batch, stamp);
-  db.ref("nippo/"+ym+"/rows").once("value").then(snap=>{
-    const cur=snap.val()||[];
-    return db.ref("nippo/"+ym).update({rows:cur.concat(rows),updatedAt:stamp});
-  }).then(()=>{
+  /* 足す行は先に作っておき、最新の並びのうしろに足すだけ */
+  txMonth(ym, cur=>cur.concat(rows), stamp).then(()=>{
     document.getElementById("doneAt").textContent="RECEIVED "+hm;
     document.getElementById("doneSub").textContent=dShort(S.date)+"・"+S.kubun;
     document.getElementById("doneJob").innerHTML=
@@ -2006,28 +2038,40 @@ function doUpdate(){
   const what="送信アプリから修正　"+diffText();
   const why=(document.getElementById("cfmWhyIn").value||"").trim();
   const strip=arr=>arr.filter(x=>!inBatch(x,b));
+  /* 直しはじめたときのこの送信の中身。だれかが先に消した・直していたら、書かずにやめる */
+  const sig=batchSig(b.rows);
+  const same=arr=>{ const mine=arr.filter(x=>inBatch(x,b)); return mine.length && batchSig(mine)===sig; };
+  /* 元の月から消せなかったとき（月をまたぐときだけ）のわけ */
+  let half=null;
   let p;
   if(oldYm===newYm){
-    p=db.ref("nippo/"+oldYm+"/rows").once("value").then(snap=>{
-      const cur=(snap.val()||[]).filter(Boolean);
-      return db.ref("nippo/"+oldYm).update({rows:strip(cur).concat(rows),updatedAt:now});
-    });
+    p=txMonth(oldYm, cur=>same(cur) ? strip(cur).concat(rows) : undefined, now);
+  } else if(!same(monthRows(oldYm))){
+    p=Promise.resolve(false);
   } else {
-    p=db.ref("nippo/"+oldYm+"/rows").once("value").then(snap=>{
-      const cur=(snap.val()||[]).filter(Boolean);
-      return db.ref("nippo/"+oldYm).update({rows:strip(cur),updatedAt:now});
-    }).then(()=>db.ref("nippo/"+newYm+"/rows").once("value")).then(snap=>{
-      const cur=(snap.val()||[]).filter(Boolean);
-      return db.ref("nippo/"+newYm).update({rows:cur.concat(rows),updatedAt:now});
-    });
+    /* 月をまたぐときは、先に新しい月へ足して、あとで元の月から消す。
+       途中で失敗しても、日報が消えるのではなく2重になるだけにするため（2重なら朝のチェックや明細で気づける） */
+    p=txMonth(newYm, cur=>cur.concat(rows), now)
+      .then(()=>txMonth(oldYm, cur=>cur.some(x=>inBatch(x,b)) ? strip(cur) : undefined, now)
+        .catch(e=>{ half=e; }))
+      .then(()=>true);
   }
-  p.then(()=>pushLog(what, why, oldYm))
-   .then(()=>{
-     btn.disabled=false;
-     resetInput();
-     S.flash="日報を1件直しました。事務所の修正履歴に残ります。"+
-       (oldYm!==newYm?"（別の月へ動かしたので、この一覧からは消えます）":"");
-     showScreen("scHist"); renderHist();
+  p.then(ok=>{
+     if(!ok){
+       alert(GONE_MSG);
+       btn.disabled=false; resetInput(); showScreen("scHist"); renderHist();
+       return;
+     }
+     return pushLog(what+(half?"　※元の月の分を消せませんでした（2重になっているかもしれません）":""), why, oldYm)
+       .then(()=>{
+         btn.disabled=false;
+         resetInput();
+         S.flash="日報を1件直しました。事務所の修正履歴に残ります。"+
+           (oldYm!==newYm?"（別の月へ動かしたので、この一覧からは消えます）":"");
+         showScreen("scHist"); renderHist();
+         if(half) alert("別の月へは入れましたが、元の月の分を消せませんでした。"+
+           "同じ日報が2つあるかもしれません。事務所に知らせてください。（"+half.message+"）");
+       });
    })
    .catch(e=>{ alert("保存に失敗しました: "+e.message); back(); });
 }
@@ -2057,14 +2101,15 @@ function doDelete(){
     "　／　"+work.length+"人・合計 "+
     f1(work.reduce((a,x)=>a+netOf(x),0))+"時間"+
     (b.rows.length>work.length?"／休み "+(b.rows.length-work.length)+"人":"");
-  db.ref("nippo/"+ym+"/rows").once("value").then(snap=>{
-    const cur=(snap.val()||[]).filter(Boolean);
-    return db.ref("nippo/"+ym).update({rows:cur.filter(x=>!inBatch(x,b)),updatedAt:now});
-  }).then(()=>pushLog(what, why, ym))
-   .then(()=>{
-     S.delB=null;
-     S.flash="日報を1件消しました。事務所の修正履歴に残ります。";
-     closeSheet(); renderHist();
+  /* 最新の並びでこの送信をさがしなおして消す。だれかが先に消していたら、書かずにやめる */
+  txMonth(ym, cur=>cur.some(x=>inBatch(x,b)) ? cur.filter(x=>!inBatch(x,b)) : undefined, now)
+   .then(ok=>{
+     if(!ok){ alert(GONE_MSG); S.delB=null; closeSheet(); renderHist(); return; }
+     return pushLog(what, why, ym).then(()=>{
+       S.delB=null;
+       S.flash="日報を1件消しました。事務所の修正履歴に残ります。";
+       closeSheet(); renderHist();
+     });
    })
    .catch(e=>alert("削除に失敗しました: "+e.message));
 }
