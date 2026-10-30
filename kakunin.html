@@ -335,8 +335,9 @@ function leadAgg(rows){
 function allowTx(v){ return (Math.round((v||0)*10)/10).toFixed(1); }
 
 /* ---- 監督・指揮者の手当（JFE・神戸製鋼・大洲バイオマス） ----
-   管理画面（kanri.html）の ksList・ksAgg と同じ数え方。直すときは両方そろえること。
-   日報アプリの「監督・指揮者モード」で送った日報（行に kan が入っている）だけを数える。
+   管理画面（kanri.html）の ksList・isKsRow・ksAgg と同じ数え方。直すときは両方そろえること。
+   日報アプリの「監督・指揮者モード」で送った日報（行に kan か shiki が入っている）だけを数える。
+   監督なし（指揮者だけ）の日報は、kan が空で shiki だけ入っている。
    監督・指揮者に、人数に関係なく1日1回ずつ。同じ人・同じ日・同じ役割が2枚に入っていても1回 */
 /* Firebase は並びを {0:…,1:…} の形で返すことがあるので、いつも配列にしてから使う */
 function ksList(v){
@@ -344,25 +345,29 @@ function ksList(v){
   if(v && typeof v==="object") return Object.keys(v).sort().map(k=>v[k]).filter(Boolean);
   return v ? [String(v)] : [];
 }
+function isKsRow(r){ return !!(r && (r.kan || ksList(r.shiki).length)); }
 /* 人ごとのまとまり。返すもの：[{n, kan:監督の回数, shiki:指揮者の回数,
-     items:[{d, role, kubun:[], jobs:[], kan:[], shiki:[]}]}]（items は日付順、同じ日は監督が先） */
+     items:[{d, role, kubun:[], jobs:[], kan:[], shiki:[], noKan, noShiki}]}]（items は日付順、同じ日は監督が先）
+   noKan／noShiki＝まとめた日報のどれかに、監督／指揮者がいなかった */
 function ksAgg(rows){
   const by={}, seen={};
   const add=(arr, v)=>{ if(v && arr.indexOf(v)<0) arr.push(v); };
   (rows||[]).forEach(r=>{
-    if(!r.kan || r.off) return;
+    if(!isKsRow(r) || r.off) return;
     const sh=ksList(r.shiki);
-    [[r.kan,"監督"]].concat(sh.map(s=>[s,"指揮者"])).forEach(x=>{
+    (r.kan?[[r.kan,"監督"]]:[]).concat(sh.map(s=>[s,"指揮者"])).forEach(x=>{
       const n=x[0], role=x[1], key=n+"|"+r.d+"|"+role;
       const P=by[n]=by[n]||{n:n, kan:0, shiki:0, items:[]};
       let it=seen[key];
       if(!it){
-        it=seen[key]={d:r.d, role:role, kubun:[], jobs:[], kan:[], shiki:[]};
+        it=seen[key]={d:r.d, role:role, kubun:[], jobs:[], kan:[], shiki:[], noKan:false, noShiki:false};
         P.items.push(it);
         if(role==="監督") P.kan++; else P.shiki++;
       }
       add(it.kubun, r.kubun); add(it.jobs, r.j||r.no||""); add(it.kan, r.kan);
       sh.forEach(s=>add(it.shiki, s));
+      if(!r.kan) it.noKan=true;
+      if(!sh.length) it.noShiki=true;
     });
   });
   return Object.keys(by).sort(byLen).map(n=>{
@@ -704,7 +709,9 @@ function renderView(){
       '<div class="j">'+(r.no?'<span class="no">'+esc(r.no)+'</span>':'')+esc(r.j||"")+'</div>'+
       '<div class="brk">'+(r.off?'<span class="mn">'+esc(r.offReason||"休み")+'</span>':brkHtml(r))+'</div>'+
       (tags.length?'<div class="tgs">'+tags.join("")+'</div>':'')+
-      (r.kan?'<div class="h">監督 '+esc(r.kan)+'・指揮者 '+esc(ksList(r.shiki).join("・"))+'</div>'
+      /* 監督・指揮者の日報は、いる役だけ出す（監督なしなら「指揮者 ○○」だけ） */
+      (isKsRow(r)?'<div class="h">'+esc([r.kan?"監督 "+r.kan:"",
+              ksList(r.shiki).length?"指揮者 "+ksList(r.shiki).join("・"):""].filter(Boolean).join("・"))+'</div>'
             :r.f?'<div class="h">職長 '+esc(r.f)+'</div>':'')+
       (mt.length?'<div class="mates">一緒に行った人：<b>'+mt.map(esc).join("、")+'</b></div>':'')+
     '</div>';

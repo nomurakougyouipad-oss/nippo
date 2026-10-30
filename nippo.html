@@ -77,6 +77,9 @@
   .card.ksc.on{background:var(--steel-bg);border-color:var(--steel);}
   .card .big .sub2{display:block;margin-top:4px;font-size:18px;font-weight:400;}
   .nchip:disabled{opacity:.3;cursor:default;}
+  /* 監督の下の「監督なし（指揮者だけ）」。横いっぱい・点線。押すと名前と同じ緑になる */
+  .nchip.kannone{width:100%;margin-top:8px;font-size:17px;border-style:dashed;}
+  .nchip.kannone.on{border-style:solid;}
   .ksnote{background:var(--ks-bg);border:1.5px solid var(--ks-line);border-left-width:5px;border-radius:2px;
     padding:12px 14px;margin:0 0 18px;font-size:15.5px;font-weight:700;color:var(--ks-ink);line-height:1.6;}
   .ksnow{color:var(--steel);font-weight:600;}
@@ -489,7 +492,7 @@
   <div id="shForemanList"></div>
   <button class="btn d" style="margin-top:12px" onclick="clearForeman()">空欄にする（職長なしで送る）</button>
   <button class="btn ksgo" style="margin-top:16px" onclick="enterKs()">JFE・神戸製鋼・大洲バイオマスの現場
-    <span class="s">職長のかわりに、監督（1人）と指揮者（1人か2人）をえらびます</span></button>
+    <span class="s">職長のかわりに、監督（1人）と指揮者（何人でも）をえらびます</span></button>
   <button class="btn o sm" style="margin-top:10px" onclick="closeSheet()">閉じる</button>
 </div>
 
@@ -659,9 +662,10 @@ let S = {
   /* 直しているとき、その日報を最初に送った人。空なら今の端末の名前を入れる */
   sentBy:"",
   delB:null, flash:"",
-  /* 監督・指揮者モード。kan＝監督、shiki＝指揮者（1〜2人）、ksAuto＝そのために自動でメンバーに入れた人。
+  /* 監督・指揮者モード。kan＝監督、kanNone＝「監督なし（指揮者だけ）」を押した、shiki＝指揮者（何人でも）、
+     ksAuto＝そのために自動でメンバーに入れた人。
      ksAsked＝「監督・指揮者の現場ではないですか？」に「このまま職長で送る」と答えた。ksAll＝○の無い人も出す */
-  ks:false, kan:null, shiki:[], ksAuto:[], ksAsked:false, ksAll:false
+  ks:false, kan:null, kanNone:false, shiki:[], ksAuto:[], ksAsked:false, ksAll:false
 };
 
 /* この端末を使う人。確認アプリと同じ鍵を使う（同じ場所に置いてあるので共通） */
@@ -1042,16 +1046,17 @@ function renderForeman(){
   const el=document.getElementById("fForeman"), card=document.getElementById("cForeman");
   document.getElementById("fLeadStep").textContent=S.ks?"2 ── 監督・指揮者":"2 ── 職長名";
   document.getElementById("fLeadNote").textContent=S.ks
-    ? "監督を1人、指揮者を1人か2人えらびます。えらんだ人は、メンバーに自動で入ります。"
+    ? "監督（1人。いない日は「監督なし」）と、指揮者（何人でも）をえらびます。えらんだ人は、メンバーに自動で入ります。"
     : "職長でない人が送るときは空欄にできます。";
   card.classList.toggle("ksc",S.ks);
   if(S.ks){
-    const any=!!(S.kan||S.shiki.length);
+    const any=!!(S.kan||S.kanNone||S.shiki.length);
     el.innerHTML=any
-      ? "監督 "+esc(S.kan||"―")+'<span class="sub2">指揮者 '+esc(S.shiki.join("・")||"―")+'</span>'
+      ? (S.kan?"監督 "+esc(S.kan):S.kanNone?"監督なし":"監督 ―")+
+        '<span class="sub2">指揮者 '+esc(S.shiki.join("・")||"―")+'</span>'
       : "タップしてえらぶ";
     el.className="big"+(any?"":" off");
-    card.classList.toggle("on",!!(S.kan&&S.shiki.length));
+    card.classList.toggle("on",ksReady());
     return;
   }
   el.textContent=S.foreman||"職長なし（空欄のまま送る）";
@@ -1117,20 +1122,29 @@ function clearForeman(){
 }
 
 /* ================== 監督・指揮者（JFE・神戸製鋼・大洲バイオマス） ==================
-   この3つの現場には職長がいない。監督（1人）と指揮者（1人か2人）に、人数に関係なく1日1回ずつ手当がつく。
-   このモードで送った日報は、全員の行に kan（監督）と shiki（指揮者の名前の並び）を入れ、f（職長）は空にする。
+   この3つの現場には職長がいない。監督（1人）と指揮者（何人でも）に、人数に関係なく1日1回ずつ手当がつく。
+   監督がいない日（監督が3つの現場を見ていて、ここにはいない日）は「監督なし（指揮者だけ）」で送る。
+   監督も指揮者も0人では送れない（どちらか1人はいる）。
+   このモードで送った日報は、全員の行に kan（監督。監督なしなら空）と shiki（指揮者の名前の並び）を入れ、f（職長）は空にする。
    職長手当（人数で数える）は f が入った行しか数えないので、このモードの日報は入らない */
-const SHIKI_MAX = 2;
 /* Firebase は並びを {0:…,1:…} の形で返すことがあるので、いつも配列にしてから使う */
 function ksList(v){
   if(Array.isArray(v)) return v.filter(Boolean);
   if(v && typeof v==="object") return Object.keys(v).sort().map(k=>v[k]).filter(Boolean);
   return v ? [String(v)] : [];
 }
+/* 送った日報の行が、監督・指揮者モードのものか。監督なしの日報は kan が空なので、指揮者も見る */
+function isKsRow(r){ return !!(r && (r.kan || ksList(r.shiki).length)); }
+/* 「監督 ○○・指揮者 ○○」。いない役は出さない（監督なしなら「指揮者 ○○」だけ） */
+function ksPair(kan, shiki){
+  return [kan?"監督 "+kan:"", shiki.length?"指揮者 "+shiki.join("・"):""].filter(Boolean).join("・");
+}
 function ksNames(){ return (S.kan?[S.kan]:[]).concat(S.shiki); }
 function isKsPerson(n){ return S.ks && ksNames().indexOf(n)>=0; }
 function ksRoleOf(n){ return S.kan===n ? "監督" : "指揮者"; }
-function ksTx(){ return "監督 "+(S.kan||"―")+"・指揮者 "+(S.shiki.join("・")||"―"); }
+function ksTx(){ return ksPair(S.kan, S.shiki); }
+/* 監督・指揮者がそろったか。監督をえらぶか「監督なし」を押して、だれか1人はいること */
+function ksReady(){ return !!(S.kan || (S.kanNone && S.shiki.length)); }
 /* 監督・指揮者にした人を、メンバーに自動で入れる（休みの人は入れない） */
 function ksJoin(n){
   if(S.sel.indexOf(n)>=0 || S.off.some(o=>o.name===n)) return;
@@ -1145,7 +1159,7 @@ function enterKs(){
   /* 職長が自動で入っていただけなら外す */
   if(S.foreman && S.foremanAuto) S.sel=S.sel.filter(x=>x!==S.foreman);
   S.foreman=null; S.foremanAuto=false;
-  S.ks=true; S.kan=null; S.shiki=[]; S.ksAuto=[]; S.ksAll=false;
+  S.ks=true; S.kan=null; S.kanNone=false; S.shiki=[]; S.ksAuto=[]; S.ksAll=false;
   /* 区分は3つの中からえらび直してもらう（3つのどれかなら、そのまま残す） */
   if(KS_KUBUN.indexOf(S.kubun)<0) S.kubun="";
   closeSheet(); renderAll(); openSheet("ks");
@@ -1154,7 +1168,7 @@ function exitKs(){
   if((S.kan||S.shiki.length) &&
      !confirm("ふつうの（職長の）日報に戻します。えらんだ監督・指揮者は外れます。")) return;
   S.sel=S.sel.filter(n=>S.ksAuto.indexOf(n)<0);
-  S.ks=false; S.kan=null; S.shiki=[]; S.ksAuto=[]; S.ksAll=false;
+  S.ks=false; S.kan=null; S.kanNone=false; S.shiki=[]; S.ksAuto=[]; S.ksAll=false;
   S.ksAsked=true;   /* 自分でふつうに戻したので、もう聞かない */
   if(!S.kubun) S.kubun="現場";
   showScreen("scStep1"); renderAll();
@@ -1166,20 +1180,20 @@ function renderKsBar(){
   });
 }
 /* えらべる人。○（監督になれる／指揮者になれる）が付いた人だけ。「ほかの人も出す」なら全員。
-   今えらんでいる人は、○が無くてもいつも出す */
+   今その役にえらんでいる人は、○が無くてもいつも出す（指揮者は何人でもえらべるので、
+   もう片方の役の欄にまでは足さない。足すと監督の欄が、押せない名前でいっぱいになる） */
 function ksPool(flag){
   const act=activeWorkers();
   const names=(S.ksAll ? act : act.filter(w=>w[flag])).map(w=>w.name);
-  ksNames().forEach(n=>{ if(names.indexOf(n)<0) names.push(n); });
+  (flag==="kantoku" ? (S.kan?[S.kan]:[]) : S.shiki).forEach(n=>{ if(names.indexOf(n)<0) names.push(n); });
   return [...new Set(names)].sort(byLen);
 }
 function renderKsSheet(){
   const chip=(n,role)=>{
     const on   = role==="kan" ? S.kan===n : S.shiki.indexOf(n)>=0;
     const other= role==="kan" ? S.shiki.indexOf(n)>=0 : S.kan===n;   /* もう片方の役になっている */
-    const full = role==="shiki" && !on && S.shiki.length>=SHIKI_MAX;  /* 指揮者は2人まで */
     return '<button class="nchip'+(on?" on":"")+'" data-r="'+role+'" data-n="'+esc(n)+'"'+
-      ((other||full)?" disabled":"")+'>'+esc(n)+'</button>';
+      (other?" disabled":"")+'>'+esc(n)+'</button>';
   };
   const grid=(names,role,flagTx)=>names.length
     ? '<div class="ngrid">'+names.map(n=>chip(n,role)).join("")+'</div>'
@@ -1187,30 +1201,39 @@ function renderKsSheet(){
       '下の「ほかの人も出す（全員）」からえらんでください。</div>';
   document.getElementById("ksList").innerHTML=
     '<div class="lbl" style="margin-top:4px">監督（1人）'+
-      (S.kan?'　<span class="ksnow">'+esc(S.kan)+'</span>':'')+'</div>'+
+      (S.kan?'　<span class="ksnow">'+esc(S.kan)+'</span>':S.kanNone?'　<span class="ksnow">監督なし</span>':'')+'</div>'+
     grid(ksPool("kantoku"),"kan","監督")+
-    '<div class="lbl">指揮者（1人か2人）'+
+    '<button class="nchip kannone'+(S.kanNone?" on":"")+'" id="ksKanNone">監督なし（指揮者だけ）</button>'+
+    '<div class="lbl">指揮者（何人でも）'+
       (S.shiki.length?'　<span class="ksnow">'+S.shiki.map(esc).join("・")+'</span>':'')+'</div>'+
     grid(ksPool("shikisha"),"shiki","指揮者")+
-    '<div class="note">同じ人を監督と指揮者の両方にはできません。指揮者は2人までです。'+
+    '<div class="note">同じ人を監督と指揮者の両方にはできません。'+
+      '監督がいない日は「監督なし（指揮者だけ）」を押して、指揮者を1人以上えらんでください。'+
       'えらんだ人は、メンバーに自動で入ります。</div>';
   document.getElementById("ksAllBtn").textContent=S.ksAll?"○が付いた人だけにもどす":"ほかの人も出す（全員）";
-  document.querySelectorAll("#ksList .nchip").forEach(b=>{
+  document.querySelectorAll("#ksList .nchip[data-r]").forEach(b=>{
     b.onclick=()=>{
       const n=b.dataset.n;
       if(b.dataset.r==="kan"){
         const prev=S.kan;
         S.kan=(prev===n)?null:n;
+        if(S.kan) S.kanNone=false;   /* 監督をえらんだら「監督なし」は消す */
         if(prev) ksLeave(prev);
         if(S.kan) ksJoin(S.kan);
       } else if(S.shiki.indexOf(n)>=0){
         S.shiki=S.shiki.filter(x=>x!==n); ksLeave(n);
-      } else if(S.shiki.length<SHIKI_MAX){
+      } else {
         S.shiki=S.shiki.concat([n]); ksJoin(n);
       }
       renderKsSheet(); renderAll();
     };
   });
+  /* 「監督なし」を押したら、えらんでいた監督は外す（もう一度押すと取り消し） */
+  document.getElementById("ksKanNone").onclick=()=>{
+    S.kanNone=!S.kanNone;
+    if(S.kanNone && S.kan){ const prev=S.kan; S.kan=null; ksLeave(prev); }
+    renderKsSheet(); renderAll();
+  };
 }
 function toggleKsAll(){ S.ksAll=!S.ksAll; renderKsSheet(); }
 /* ふつうのモードのまま3つの現場をえらんだとき、押し忘れでないか聞く。
@@ -1609,16 +1632,19 @@ function renderChecks(){
 
 function renderStepBtns(){
   document.getElementById("btnToTime").disabled=!canStep2();
-  /* 監督・指揮者モードで、まだ足りないもの */
-  const miss=!S.ks?[]:[!S.kan&&"監督", !S.shiki.length&&"指揮者",
+  /* 監督・指揮者モードで、まだ足りないもの。監督は、えらぶか「監督なし」を押す。
+     監督なしなら指揮者が1人はいる */
+  const miss=!S.ks?[]:[
+    !S.kan&&!S.kanNone&&(S.shiki.length?"監督（いない日は「監督なし」）":"監督・指揮者"),
+    S.kanNone&&!S.shiki.length&&"指揮者（監督なしのときは1人はいります）",
     KS_KUBUN.indexOf(S.kubun)<0&&"区分（"+KS_KUBUN.join("・")+"）"].filter(Boolean);
   document.getElementById("fStepHint").textContent=miss.length?miss.join("・")+"をえらんでください":"";
   const g=S.sel.reduce((a,n)=>a+totalOf(hoursFor(n)),0);
   document.getElementById("fSum").textContent="合計 "+f1(g)+"時間・"+S.sel.length+"人";
 }
 function canStep2(){
-  /* 監督・指揮者モードは、監督1人・指揮者1人以上・3つの現場のどれか、がそろってから */
-  if(S.ks && !(S.kan && S.shiki.length && KS_KUBUN.indexOf(S.kubun)>=0)) return false;
+  /* 監督・指揮者モードは、監督・指揮者（ksReady）と3つの現場のどれか、がそろってから */
+  if(S.ks && !(ksReady() && KS_KUBUN.indexOf(S.kubun)>=0)) return false;
   return !!((S.job||S.jobFree) && (S.sel.length || (S.mode==="edit" && S.off.length)));
 }
 function canSend(){
@@ -1718,7 +1744,7 @@ function goConfirm(){
     "<dt>工事</dt><dd>"+(S.job?'<span class="no">'+esc(S.job)+'</span><br>':'')+esc(jobName)+"</dd>"+
     "<dt>区分</dt><dd>"+esc(S.kubun)+"</dd>"+
     (S.ks
-      ? "<dt>監督</dt><dd>"+esc(S.kan||"")+"</dd><dt>指揮者</dt><dd>"+esc(S.shiki.join("・"))+"</dd>"
+      ? "<dt>監督</dt><dd>"+esc(S.kan||"なし")+"</dd><dt>指揮者</dt><dd>"+esc(S.shiki.join("・")||"なし")+"</dd>"
       : "<dt>職長</dt><dd>"+esc(S.foreman||"なし（空欄）")+"</dd>")+
     "<dt>休み</dt><dd>"+(S.off.length?esc(S.off.map(o=>o.name+"（"+o.reason+"）").join("・")):"なし")+"</dd>"+
     "<dt>チェック</dt><dd>"+esc(chk)+"</dd>"+
@@ -1726,7 +1752,7 @@ function goConfirm(){
       ? esc(mn.map(n=>n+"（"+[S.late[n]?"遅刻 −"+f1(S.late[n]):"",S.early[n]?"早退 −"+f1(S.early[n]):""]
           .filter(Boolean).join("・")+"）").join("　"))
       : "なし")+"</dd>";
-  /* 監督・指揮者の手当。人数に関係なく、1日1回ずつ */
+  /* 監督・指揮者の手当。人数に関係なく、1日1回ずつ。文は、えらんだ人だけ出す（監督なしなら指揮者だけ） */
   document.getElementById("cfmKs").innerHTML=S.ks
     ? '<div class="ksnote">'+esc(ksTx())+'に1日1回ずつ手当がつきます</div>' : "";
   const grand=S.sel.reduce((a,n)=>a+netFor(n),0);
@@ -1841,6 +1867,8 @@ function showOver(list){
 }
 
 function doSend(){
+  /* 確認画面と同じ条件を、送る直前にも見る（監督・指揮者が0人など、そろっていなければ送らない） */
+  if(!canSend()) return;
   const btn=document.getElementById("btnSend");
   btn.disabled=true; btn.textContent="送信中...";
   const jobName=S.job?(JOBS.find(j=>j.no===S.job)||{}).name:S.jobFree;
@@ -1881,7 +1909,7 @@ function resetInput(){
   S.date=todayStr();
   S.job=null; S.jobFree=null; S.all={}; S.ovr={}; S.sel=[]; S.off=[]; S.guests=[]; S.more=false;
   S.checks={出張:false,夜勤:false}; S.late={}; S.early={};
-  S.ks=false; S.kan=null; S.shiki=[]; S.ksAuto=[]; S.ksAsked=false; S.ksAll=false;
+  S.ks=false; S.kan=null; S.kanNone=false; S.shiki=[]; S.ksAuto=[]; S.ksAsked=false; S.ksAll=false;
   if(!S.kubun) S.kubun="現場";
   applyTeam();
 }
@@ -1942,7 +1970,7 @@ function renderHist(){
       '<div class="nm">'+(r.no?'<span class="no">'+esc(r.no)+'</span> ':'')+esc(r.j||"")+'</div>'+
       '<div class="mt">'+esc(r.kubun||"")+' ／ '+work.length+'人'+
         (offs.length?' ／ 休み '+offs.length+'人':'')+
-        (r.kan?'<br>監督 '+esc(r.kan)+'・指揮者 '+esc(ksList(r.shiki).join("・")):'')+
+        (isKsRow(r)?'<br>'+esc(ksPair(r.kan, ksList(r.shiki))):'')+
         (work.length?'<br>'+esc(work.map(x=>x.n).join("・")):'')+
         (offs.length?'<br>休み：'+esc(offs.map(x=>x.n).join("・")):'')+'</div>'+
       '<div class="acts">'+
@@ -1986,7 +2014,9 @@ function loadBatch(b){
   S.checks={出張:!!rc.s,夜勤:!!rc.y};
   S.more=work.some(r=>MORE_KINDS.some(k=>(r.h||{})[k]));
   /* 監督・指揮者モードで送った日報なら、そのモードで開く */
-  S.ks=!!r0.kan; S.kan=r0.kan||null; S.shiki=ksList(r0.shiki); S.ksAuto=[]; S.ksAll=false;
+  /* 監督なし（指揮者だけ）で送った日報は、kan が空で shiki だけ入っている */
+  S.ks=isKsRow(r0); S.kan=r0.kan||null; S.kanNone=S.ks&&!r0.kan;
+  S.shiki=ksList(r0.shiki); S.ksAuto=[]; S.ksAll=false;
   if(S.ks){ S.foreman=null; S.foremanAuto=false; }
   S.ksAsked=true;   /* 送った日報を開いたときは、押し忘れの確認はしない */
 }
@@ -2132,7 +2162,7 @@ function doDelete(){
   const why=(document.getElementById("dlWhy").value||"").trim();
   const what="送信アプリから削除　"+dShort(r.d)+"　"+(r.no?r.no+" ":"")+(r.j||"")+
     "　／　"+(r.kubun||"")+
-    (r.kan ? "　監督 "+r.kan+"・指揮者 "+ksList(r.shiki).join("・") : "　職長 "+(r.f||"―"))+
+    (isKsRow(r) ? "　"+ksPair(r.kan, ksList(r.shiki)) : "　職長 "+(r.f||"―"))+
     "　／　"+work.length+"人・合計 "+
     f1(work.reduce((a,x)=>a+netOf(x),0))+"時間"+
     (b.rows.length>work.length?"／休み "+(b.rows.length-work.length)+"人":"");

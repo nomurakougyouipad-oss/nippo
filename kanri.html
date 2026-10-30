@@ -785,35 +785,41 @@ function leadAgg(rows){
 }
 /* ---- 監督・指揮者の手当（JFE・神戸製鋼・大洲バイオマス） ----
    この3つの現場には職長がいない。日報アプリの「監督・指揮者モード」で送った日報は、
-   全員の行に kan（監督）と shiki（指揮者1〜2人）が入り、f（職長）は空になっている。
+   全員の行に kan（監督）と shiki（指揮者。何人でも）が入り、f（職長）は空になっている。
+   監督がいない日は「監督なし（指揮者だけ）」で送るので、kan は空で shiki だけ入っている。
    監督・指揮者に、人数に関係なく1日1回ずつ。同じ人・同じ日・同じ役割が2枚に入っていても1回。
    ほかのメンバーには付かない。職長手当（leadAgg）は f が入った行しか見ないので、こちらの日報は入らない。
-   確認アプリ（kakunin.html）にも同じ ksList・ksAgg がある。直すときは両方そろえること */
+   確認アプリ（kakunin.html）にも同じ ksList・isKsRow・ksAgg がある。直すときは両方そろえること */
 /* Firebase は並びを {0:…,1:…} の形で返すことがあるので、いつも配列にしてから使う */
 function ksList(v){
   if(Array.isArray(v)) return v.filter(Boolean);
   if(v && typeof v==="object") return Object.keys(v).sort().map(k=>v[k]).filter(Boolean);
   return v ? [String(v)] : [];
 }
+/* 監督・指揮者モードで送った行か。監督なしの日報は kan が空なので、指揮者も見る */
+function isKsRow(r){ return !!(r && (r.kan || ksList(r.shiki).length)); }
 /* 人ごとのまとまり。返すもの：[{n, kan:監督の回数, shiki:指揮者の回数,
-     items:[{d, role, kubun:[], jobs:[], kan:[], shiki:[]}]}]（items は日付順、同じ日は監督が先） */
+     items:[{d, role, kubun:[], jobs:[], kan:[], shiki:[], noKan, noShiki}]}]（items は日付順、同じ日は監督が先）
+   noKan／noShiki＝まとめた日報のどれかに、監督／指揮者がいなかった */
 function ksAgg(rows){
   const by = {}, seen = {};
   const add = (arr, v)=>{ if(v && arr.indexOf(v) < 0) arr.push(v); };
   (rows||[]).forEach(r=>{
-    if(!r.kan || r.off) return;
+    if(!isKsRow(r) || r.off) return;
     const sh = ksList(r.shiki);
-    [[r.kan,"監督"]].concat(sh.map(s=>[s,"指揮者"])).forEach(x=>{
+    (r.kan ? [[r.kan,"監督"]] : []).concat(sh.map(s=>[s,"指揮者"])).forEach(x=>{
       const n = x[0], role = x[1], key = n+"|"+r.d+"|"+role;
       const P = by[n] = by[n] || {n:n, kan:0, shiki:0, items:[]};
       let it = seen[key];
       if(!it){
-        it = seen[key] = {d:r.d, role:role, kubun:[], jobs:[], kan:[], shiki:[]};
+        it = seen[key] = {d:r.d, role:role, kubun:[], jobs:[], kan:[], shiki:[], noKan:false, noShiki:false};
         P.items.push(it);
         if(role==="監督") P.kan++; else P.shiki++;
       }
       add(it.kubun, r.kubun); add(it.jobs, r.j || r.no || ""); add(it.kan, r.kan);
       sh.forEach(s=>add(it.shiki, s));
+      if(!r.kan) it.noKan = true;
+      if(!sh.length) it.noShiki = true;
     });
   });
   return Object.keys(by).sort(byLen).map(n=>{
@@ -822,11 +828,19 @@ function ksAgg(rows){
     return by[n];
   });
 }
-/* 職長の欄に出す文字。監督・指揮者の日報は、職長のかわりに監督・指揮者を出す */
-function leaderTx(r){ return r.kan ? "監督 "+r.kan+"／指揮者 "+ksList(r.shiki).join("・") : (r.f||""); }
+/* 職長の欄に出す文字。監督・指揮者の日報は、職長のかわりに監督・指揮者を出す。
+   いない役は出さない（監督なしなら「指揮者 ○○」だけ） */
+function leaderTx(r){
+  if(!isKsRow(r)) return r.f||"";
+  const sh = ksList(r.shiki);
+  return [r.kan ? "監督 "+r.kan : "", sh.length ? "指揮者 "+sh.join("・") : ""].filter(Boolean).join("／");
+}
 function leaderHtml(r){
-  return r.kan ? '<span class="ksv">監督 '+esc(r.kan)+'<div class="ldk">指揮者 '+
-    esc(ksList(r.shiki).join("・"))+'</div></span>' : esc(r.f||"");
+  if(!isKsRow(r)) return esc(r.f||"");
+  const sh = ksList(r.shiki), stx = sh.length ? "指揮者 "+sh.join("・") : "";
+  return '<span class="ksv">'+(r.kan
+    ? '監督 '+esc(r.kan)+(stx ? '<div class="ldk">'+esc(stx)+'</div>' : '')
+    : esc(stx))+'</span>';
 }
 /* ↓ここから3つは、日報を直す画面の「職長手当（この送信の分）」の欄だけで使う。
    送信ごとに保存している数（fa）を出したり、計算し直したりする。画面やExcelの集計には使わない */
@@ -1977,7 +1991,7 @@ let ksSel = null;   /* 右に出している人 */
 const KS_RULE =
   '<b>数え方</b><br>'+
   esc(KS_KUBUN.join("・"))+'の現場を、日報アプリの「監督・指揮者モード」で送った日報だけを数えます。<br>'+
-  '監督（1人）・指揮者（1人か2人）に、人数に関係なく1日1回ずつ。時間で0.5にはしません。<br>'+
+  '監督（1人。監督なしの日もある）・指揮者（何人でも）に、人数に関係なく1日1回ずつ。時間で0.5にはしません。<br>'+
   '同じ人・同じ日・同じ役割が2枚に入っていても1回です。<br>'+
   'ほかのメンバーには付きません。この日報は、職長（人数で数える）のほうには入りません。';
 /* 右の上（画面は「10月」、印刷は年も入れる） */
@@ -2003,7 +2017,10 @@ function ksTable(x){
       '<td>'+it.kubun.map(k=>'<span class="kb">'+esc(k)+'</span>').join(" ")+'</td>'+
       '<td>'+esc(it.jobs.join("／"))+'</td>'+
       '<td><span class="rl '+(it.role==="監督"?"kan":"shiki")+'">'+esc(it.role)+'</span></td>'+
-      '<td>監督 '+esc(it.kan.join("・"))+'<br>指揮者 '+esc(it.shiki.join("・"))+'</td></tr>').join("")+
+      /* 監督なし（指揮者だけ）の日報は「監督：なし」。同じ日に監督ありの日報もあれば、そのことを書きそえる */
+      '<td>'+(it.kan.length ? '監督 '+esc(it.kan.join("・"))+(it.noKan ? '（監督なしの日報もあり）' : '') : '監督：なし')+'<br>'+
+        (it.shiki.length ? '指揮者 '+esc(it.shiki.join("・"))+(it.noShiki ? '（指揮者なしの日報もあり）' : '') : '指揮者：なし')+
+      '</td></tr>').join("")+
     '</tbody></table></div>';
 }
 function renderKsView(L, R){
@@ -2713,7 +2730,7 @@ function pushLog(what, why, who){
 }
 function rowSummary(r){
   return (r.no?r.no+"　":"") + (r.j||"") + "　／　" + (r.kubun||"") + "　" +
-    (r.kan ? leaderTx(r) : "職長 " + (r.f||"―"));
+    (isKsRow(r) ? leaderTx(r) : "職長 " + (r.f||"―"));
 }
 function batchIdxOf(rows, batch){
   const out=[];
@@ -2726,7 +2743,7 @@ function refreshAllow(rows, batch){
   const idx = batchIdxOf(rows, batch);
   if(!idx.length) return null;
   if(idx.some(i=>rows[i].faE)) return null;
-  if(idx.some(i=>rows[i].kan)) return null;   /* 監督・指揮者の日報には職長手当が無い */
+  if(idx.some(i=>isKsRow(rows[i]))) return null;   /* 監督・指揮者の日報には職長手当が無い */
   const v = autoAllow(idx.map(i=>rows[i]));
   idx.forEach(i=>{ rows[i] = Object.assign({}, rows[i], {fa:v}); });
   return v;
@@ -2774,8 +2791,8 @@ function openEdit(key){
   document.getElementById("eF").innerHTML =
     opt("", "職長なし（空欄）", r.f||"") + foremanNames().map(n=>opt(n,n,r.f||"")).join("");
   /* 監督・指揮者の日報には職長がいない。監督・指揮者は、送った人がスマホの送信履歴から直す */
-  document.getElementById("eF").disabled = !!r.kan;
-  document.getElementById("eKsNote").textContent = r.kan
+  document.getElementById("eF").disabled = isKsRow(r);
+  document.getElementById("eKsNote").textContent = isKsRow(r)
     ? "監督・指揮者の日報です（"+leaderTx(r)+"）。監督・指揮者を変えるときは、送った人がスマホの送信履歴の「直す」から直してください。" : "";
 
   document.getElementById("eOff").value = r.off ? "1" : "0";
@@ -2797,7 +2814,7 @@ function openEdit(key){
   const bidx = batchIdxOf(rows, r.batch);
   const brows = bidx.map(i=>rows[i]);
   const wrap = document.getElementById("eAllowWrap");
-  if(r.batch && brows.length && !r.kan){
+  if(r.batch && brows.length && !isKsRow(r)){
     const cur = batchAllow(brows), auto = autoAllow(brows);
     const manual = brows.some(x=>x.faE);
     eAllowPrev = cur;
@@ -2874,7 +2891,7 @@ function applyEdit(src, ed){
   /* --- 職長手当 --- */
   /* 手で直したときだけ faE を立てる。そうでなければ自動計算が付いてくる */
   let after = null;
-  if(r.batch && batchIdxOf(rows, r.batch).length && !r.kan){
+  if(r.batch && batchIdxOf(rows, r.batch).length && !isKsRow(r)){
     if(ed.allowIn === ""){
       batchIdxOf(rows, r.batch).forEach(i=>{
         const c = Object.assign({}, rows[i]); delete c.fa; delete c.faE; rows[i] = c;
@@ -2902,7 +2919,7 @@ function saveEdit(){
   const nj  = (document.getElementById("eJ").value||"").trim();
   const nk  = document.getElementById("eKubun").value;
   /* 監督・指揮者の日報は、職長の欄を変えない（空のまま） */
-  const nf  = r.kan ? (r.f||"") : document.getElementById("eF").value;
+  const nf  = isKsRow(r) ? (r.f||"") : document.getElementById("eF").value;
   if(nd !== r.d)            changes.push("日付 "+dStr(r.d)+" → "+dStr(nd));
   if(nno !== (r.no||""))    changes.push("注番 "+(r.no||"―")+" → "+(nno||"―"));
   if(nj !== (r.j||""))      changes.push("件名 "+(r.j||"―")+" → "+(nj||"―"));
@@ -3021,7 +3038,7 @@ function openDel(key){
   const bidx = batchIdxOf(rows, r.batch);
   const manual = bidx.some(i=>rows[i].faE);
   document.getElementById("dAllowNote").textContent =
-    (r.batch && bidx.length>1 && !manual && !r.kan)
+    (r.batch && bidx.length>1 && !manual && !isKsRow(r))
       ? "この送信の職長手当は、削除のあと自動で計算し直します。" : "";
   document.getElementById("dWhy").value = "";
   document.getElementById("mDel").classList.add("on");
