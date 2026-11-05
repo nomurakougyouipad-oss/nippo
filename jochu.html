@@ -23,6 +23,7 @@
     --line:rgba(32,30,29,.2); --line-s:rgba(32,30,29,.32);
     --paper:#f3f2f2; --card:#fbfaf8; --field:#e9e8e8;
     --mag-d:#8e0b4c;
+    --yel:#c99a00; --yel-bg:#fff3c4; --yel-d:#5c4300;
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{font-family:"Hiragino Sans","Yu Gothic UI","Noto Sans JP",sans-serif;
@@ -60,6 +61,10 @@
   .dbar .d small{display:block;font-size:16px;font-weight:600;color:var(--muted);}
   .dkind{margin-top:8px;text-align:center;font-size:19px;color:var(--muted);}
   .dkind.hol{color:var(--mag-d);font-weight:700;}
+  /* 今日ではない日をえらんでいるとき（黄色） */
+  .dwarn{margin:10px auto 0;padding:8px 12px;max-width:300px;text-align:center;background:var(--yel-bg);
+    border:2px solid var(--yel);border-radius:8px;color:var(--yel-d);font-size:19px;font-weight:700;}
+  .dwarn:empty{display:none;}
   .sent{margin-top:16px;padding:14px 16px;background:var(--green);color:#fff;border-radius:6px;
     font-size:21px;font-weight:700;}
   .sent .s{margin-top:4px;font-size:17px;font-weight:400;line-height:1.6;}
@@ -121,8 +126,13 @@
     background:rgba(32,30,29,.45);z-index:50;}
   .modal.on{display:flex;}
   .modal .in{width:100%;max-width:520px;padding:26px 20px 30px;background:var(--paper);border-radius:12px 12px 0 0;}
-  .modal .mt{font-size:26px;font-weight:700;}
+  .modal .mt{font-size:26px;font-weight:700;line-height:1.4;}
   .modal .ms{margin-top:8px;font-size:20px;line-height:1.6;}
+  .modal .sec{padding:12px 0;border-bottom:1px solid var(--line);}
+  .modal .sec:first-child{padding-top:0;}
+  .modal .yel{padding:12px 14px;background:var(--yel-bg);border:2px solid var(--yel);border-radius:8px;
+    color:var(--yel-d);font-size:21px;line-height:1.5;}
+  .modal .yel b{display:block;font-size:24px;}
   .busy{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
     background:rgba(243,242,242,.85);z-index:60;font-size:26px;font-weight:700;}
   .busy.on{display:flex;}
@@ -172,6 +182,7 @@
     <button id="dNext" onclick="moveDay(1)">›</button>
   </div>
   <div class="dkind" id="dKind"></div>
+  <div class="dwarn" id="dWarn"></div>
   <div id="mSent"></div>
   <button class="big" id="mUsual" onclick="sendUsual()"></button>
   <div id="mSubs"></div>
@@ -214,12 +225,12 @@
   <button class="big" onclick="goMain()">とじる</button>
 </div></div>
 
-<!-- 同じ日に送りなおすときの確認 -->
-<div class="modal" id="mRep"><div class="in">
-  <div class="mt">この日は もう送ってあります</div>
-  <div class="ms">前に送った分と 入れかえます。</div>
-  <button class="big" id="repGo">入れかえて 送る</button>
-  <button class="back" style="margin-top:12px" onclick="closeRep()">やめる</button>
+<!-- 送る前の確認（今日ではない日・休み・同じ日に送りなおし）。あてはまるものだけ、まとめて出す -->
+<div class="modal" id="mAsk"><div class="in">
+  <div id="askBody"></div>
+  <div class="ms" style="margin-top:14px;font-weight:700">よいですか？</div>
+  <button class="big" id="askGo">送る</button>
+  <button class="back" style="margin-top:12px" onclick="closeAsk()">やめる</button>
 </div></div>
 <div class="busy" id="busy">送っています…</div>
 
@@ -250,8 +261,9 @@ const MAX_HOLIDAY = 12;   /* 日曜・祝日の「時間」はここまで */
 const MAX_OT = 12;        /* 残業 */
 const STEP = 0.5;         /* ＋−は30分ずつ */
 const BACK_DAYS = 7;      /* 前の日に戻れるのは1週間まで */
-/* スマホに覚えさせるもの。名前は送信アプリ・確認アプリと同じ鍵（同じ場所に置いてあるので共通） */
-const ME_KEY = "yotsuba.me", PLACE_KEY = "yotsuba.joch";
+/* スマホに覚えさせるもの。名前は送信アプリ・確認アプリと同じ鍵（同じ場所に置いてあるので共通）。
+   DEV_KEY＝この端末の番号（あとで「どの端末から送ったか」を追えるように、1回だけ作る） */
+const ME_KEY = "yotsuba.me", PLACE_KEY = "yotsuba.joch", DEV_KEY = "yotsuba.dev";
 
 /* ================== 小道具 ================== */
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -264,6 +276,32 @@ function addDays(s, n){ const t=new Date(s+"T00:00:00"); t.setDate(t.getDate()+n
 function ymOf(d){ return String(d||"").slice(0,7); }
 function dLabel(ds){ const d=new Date(ds+"T00:00:00");
   return (d.getMonth()+1)+"月"+d.getDate()+"日（"+WD[d.getDay()]+"）"; }
+/* 修正履歴に書く短い日付（例：11/4（水））と、書いた時刻（例：11/4 17:05）。送信アプリ・管理画面と同じ形 */
+function dShort(ds){ const d=new Date(ds+"T00:00:00");
+  return (d.getMonth()+1)+"/"+d.getDate()+"（"+WD[d.getDay()]+"）"; }
+function stampNow(){ const n=new Date();
+  return (n.getMonth()+1)+"/"+n.getDate()+" "+
+    String(n.getHours()).padStart(2,"0")+":"+String(n.getMinutes()).padStart(2,"0"); }
+
+/* ---- この端末の番号と種類（送る行に入れる） ----
+   番号は "d"＋ランダム8けた。この端末で1回だけ作って、スマホに覚えさせる */
+let DEV = "";
+function deviceId(){
+  if(DEV) return DEV;
+  try{ DEV = localStorage.getItem(DEV_KEY) || ""; }catch(e){}
+  if(!DEV){
+    DEV = "d"+String(Math.floor(Math.random()*1e8)).padStart(8,"0");
+    try{ localStorage.setItem(DEV_KEY, DEV); }catch(e){}
+  }
+  return DEV;
+}
+function deviceOs(){
+  const ua = navigator.userAgent || "";
+  if(/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "iPhone";
+  if(/Android/.test(ua)) return "Android";
+  return "PC";
+}
+deviceId();
 
 /* ---- 暦の休日（日曜・祝日）。管理画面（kanri.html）の jpHolidays・redDayOf と同じ計算 ---- */
 const JP_HOL_CACHE = {};
@@ -372,10 +410,40 @@ db.ref("master/workers").on("value", s=>{
   WRAW = s.val()||{}; WORKERS = Object.values(WRAW); gotW = true; onData();
 });
 db.ref("master/jochMatome").on("value", s=>{ MATOME = s.val()||{}; gotM = true; onData(); });
-/* 送ったかどうかを見るため、1週間前から今日までの月だけ読む */
-[...new Set([ymOf(addDays(todayStr(), -BACK_DAYS)), ymOf(todayStr())])].forEach(ym=>{
-  db.ref("nippo/"+ym+"/rows").on("value", s=>{ MONTHS[ym] = rowsIn({rows:s.val()}); renderMain(); });
-});
+/* 送ったかどうかを見るため、1週間前から今日までの月だけ読む。
+   開いたまま月が変わったら、新しい月も読む（アプリが前に出てきたときに、もう一度呼ぶ） */
+const WATCHED = {};
+function watchMonths(){
+  const t = todayStr();
+  [ymOf(addDays(t, -BACK_DAYS)), ymOf(t)].forEach(ym=>{
+    if(WATCHED[ym]) return;
+    WATCHED[ym] = true;
+    db.ref("nippo/"+ym+"/rows").on("value", s=>{ MONTHS[ym] = rowsIn({rows:s.val()}); renderMain(); });
+  });
+}
+watchMonths();
+
+/* ---- アプリが前に出てきたとき ----
+   ホーム画面のアプリは、閉じずに残しておくと、前の日の画面のまま出てくることがある
+   （11/4 のつもりが 11/2 で届いたことがあった）。
+   開いていた日から日付が変わっていたら、日付を今日にもどして、ふだんの画面にもどす（送る途中の画面でも） */
+let shownDay = todayStr();
+function onResume(){
+  if(document.visibilityState==="hidden") return;
+  const t = todayStr();
+  watchMonths();
+  if(t===shownDay) return;
+  shownDay = t;
+  V.date = t;
+  closeAsk();
+  /* 送っている途中なら、そのまま（送りおわると「送りました」が出る） */
+  if(document.getElementById("busy").classList.contains("on")) return;
+  if(["scLoad","scPlace","scMatome","scName"].some(isOn)) return;
+  goMain();
+}
+document.addEventListener("visibilitychange", onResume);
+window.addEventListener("pageshow", onResume);
+window.addEventListener("focus", onResume);
 function onData(){
   if(!gotW || !gotM) return;
   markSeen();
@@ -485,6 +553,7 @@ function renderMain(){
   const rd = redDayOf(d), kd = document.getElementById("dKind");
   kd.textContent = !rd ? "平日" : (rd==="日曜" ? "日曜なので 休日で送ります" : "祝日（"+rd+"）なので 休日で送ります");
   kd.className = "dkind"+(rd ? " hol" : "");
+  document.getElementById("dWarn").textContent = d===t ? "" : "今日ではありません";
 
   const ts = targets(), many = isMatome(PLACE);
   const sent = sentOf(d, ts);
@@ -616,7 +685,8 @@ function sendEach(){
   }));
 }
 /* 送る行。形は送信アプリ（nippo.html）の buildRows と同じ。
-   注番は無し、件名と区分は常駐先、職長（f）は空（職長手当に入らない）。src:"joch" で、かんたん日報の行と分かる */
+   注番は無し、件名と区分は常駐先、職長（f）は空（職長手当に入らない）。src:"joch" で、かんたん日報の行と分かる。
+   dev＝送った端末の番号、os＝その種類（iPhone／Android／PC）。あとで「どの端末から送ったか」を追うため */
 function buildRow(n, e, d, batch, stamp){
   const w = WORKERS.find(x=>x.name===n) || {};
   const k = kindsOf(PLACE), h = {};
@@ -628,18 +698,44 @@ function buildRow(n, e, d, batch, stamp){
     no:"", j:PLACE, kubun:PLACE, f:"", by:ME,
     h:h, off:e.off ? 1 : 0, offReason:e.off||"",
     s:0, y:0, late:0, early:0, fa:0,
-    batch:batch, at:stamp, src:"joch"};
+    batch:batch, at:stamp, src:"joch", dev:deviceId(), os:deviceOs()};
 }
-/* list＝[{n:名前, e:{h, ot} か {off}}]。前に送ってあれば、入れかえてよいか先に聞く */
-let repThen = null;
+/* 事務所の修正履歴（管理画面と同じ形）に残す。why は「かんたん日報」 */
+function pushLog(what, ym){
+  return db.ref("log").push({ t:stampNow(), who:ME||"（名前が未登録の端末）", ym:ym, what:what, why:"かんたん日報" });
+}
+/* ---- 送る前の確認 ----
+   今日ではない日・休み・同じ日の送りなおし、のどれかにあてはまれば、まとめて1回だけ聞く。
+   どれにもあてはまらない（今日の分を、いつもどおり・時間で、はじめて送る）ときは、聞かずに送る */
+function askHtml(d, list, rep){
+  const secs = [];
+  if(d !== todayStr())
+    secs.push('<div class="yel">'+esc(dLabel(d))+'の分を送ります。<b>今日ではありません。</b></div>');
+  const offs = list.filter(x=>x.e.off);
+  if(offs.length===1 && list.length===1)
+    secs.push('<div class="mt">'+esc(offs[0].n)+'さん　'+esc(dLabel(d))+'を「'+esc(offs[0].e.off)+'」で送ります。</div>');
+  else if(offs.length)
+    secs.push('<div class="mt">'+esc(dLabel(d))+'は、この人を休みで送ります</div>'+
+      offs.map(x=>'<div class="ms" style="font-size:23px;font-weight:700">'+esc(x.n)+'さん　「'+esc(x.e.off)+'」</div>').join(""));
+  if(rep)
+    secs.push('<div class="mt">この日は もう送ってあります</div><div class="ms">前に送った分と 入れかえます。</div>');
+  return secs.map(s=>'<div class="sec">'+s+'</div>').join("");
+}
+/* list＝[{n:名前, e:{h, ot} か {off}}] */
+let askThen = null;
 function send(list){
   const d = V.date, names = list.map(x=>x.n);
+  const rep = sentOf(d, names).length > 0;
   const go = ()=>doSend(d, list, names);
-  if(sentOf(d, names).length){ repThen = go; document.getElementById("mRep").classList.add("on"); }
-  else go();
+  const html = askHtml(d, list, rep);
+  if(!html){ go(); return; }
+  document.getElementById("askBody").innerHTML = html;
+  document.getElementById("askGo").textContent = rep ? "入れかえて 送る" : "送る";
+  askThen = go;
+  document.getElementById("mAsk").classList.add("on");
 }
-function closeRep(){ document.getElementById("mRep").classList.remove("on"); repThen = null; }
-document.getElementById("repGo").onclick = ()=>{ const go = repThen; closeRep(); if(go) go(); };
+function closeAsk(){ document.getElementById("mAsk").classList.remove("on"); askThen = null; }
+document.getElementById("askGo").onclick = ()=>{ const go = askThen; closeAsk(); if(go) go(); };
 function doSend(d, list, names){
   const busy = document.getElementById("busy");
   if(busy.classList.contains("on")) return;
@@ -649,9 +745,21 @@ function doSend(d, list, names){
     String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
   const batch = "b"+now.getTime();
   const rows = list.map(x=>buildRow(x.n, x.e, d, batch, stamp));
-  /* その人・その日の、前にかんたん日報で送った行は、新しい行と入れかえる（同じ transaction の中で） */
-  txMonth(ymOf(d), cur=>cur.filter(r=>!(r.src==="joch" && r.d===d && names.indexOf(r.n)>=0)).concat(rows), stamp)
+  /* その人・その日の、前にかんたん日報で送った行は、新しい行と入れかえる（同じ transaction の中で）。
+     old＝入れかえた前の行（書いたときの最新の並びのもの）。中身が変わった人だけ、あとで修正履歴に残す */
+  let old = [];
+  txMonth(ymOf(d), cur=>{
+    old = cur.filter(r=>r.src==="joch" && r.d===d && names.indexOf(r.n)>=0);
+    return cur.filter(r=>old.indexOf(r)<0).concat(rows);
+  }, stamp)
     .then(()=>{
+      list.forEach(x=>{
+        const was = old.filter(r=>r.n===x.n);
+        if(!was.length) return;
+        const before = was.map(r=>sumTx(rowEntry(r), d)).join("・"), after = sumTx(x.e, d);
+        if(before===after) return;
+        pushLog(x.n+" "+dShort(d)+"　"+before+" → "+after+"（かんたん日報で送りなおし）", ymOf(d)).catch(()=>{});
+      });
       busy.classList.remove("on");
       document.getElementById("doneD").textContent = dLabel(d)+"　"+PLACE;
       document.getElementById("doneL").innerHTML = list.map(x=>

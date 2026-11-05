@@ -2773,6 +2773,9 @@ function openEdit(key){
   const r = f.row, h = r.h || {};
   document.getElementById("eWho").textContent = r.n + "　" + dStr(r.d);
   document.getElementById("eJob").textContent = rowSummary(r);
+  /* かんたん日報の行は、送った端末（種類・番号）を小さく出す */
+  document.getElementById("eDev").textContent = (r.src==="joch" && (r.os || r.dev))
+    ? "送った端末："+[r.os, r.dev].filter(Boolean).join("・") : "";
 
   document.getElementById("eDate").value = r.d || "";
 
@@ -3601,6 +3604,7 @@ document.getElementById("xlDem").addEventListener("click", ()=>{
   <h3>この行を直す</h3>
   <div id="eWho" style="font-size:17px;font-weight:600"></div>
   <div id="eJob" style="font-size:14px;color:var(--muted);margin-top:2px"></div>
+  <div id="eDev" style="font-size:12.5px;color:var(--faint);margin-top:2px"></div>
 
   <div class="ehd">日付・工事・区分・職長</div>
   <div class="ek"><label>日付</label><input type="date" id="eDate"></div>

@@ -99,6 +99,10 @@
   .card .nm{margin-top:4px;font-size:18px;}
   .card .hint{margin-top:4px;font-size:13px;color:var(--faint);}
   .card .rt{float:right;font-size:14px;color:var(--muted);text-decoration:underline;}
+  /* 今日ではない日をえらんでいるとき（黄色） */
+  .dwarn{margin-top:8px;padding:8px 12px;background:#fff3c4;border:1.5px solid #c99a00;border-radius:2px;
+    color:#5c4300;font-size:15px;font-weight:700;}
+  .dwarn:empty{display:none;}
 
   .chips{display:flex;flex-wrap:wrap;gap:8px;}
   .chip{padding:13px 18px;min-height:56px;background:transparent;color:var(--ink);
@@ -348,6 +352,7 @@
       <button class="card on" onclick="openSheet('cal')">
         <span class="rt">変更</span><span class="big" id="fDate"></span>
       </button>
+      <div class="dwarn" id="fDateWarn"></div>
     </div>
     <div class="sec">
       <div class="step" id="fLeadStep">2 ── 職長名</div>
@@ -659,6 +664,8 @@ let S = {
   offMgOpen:{"自社":true,"常駐協力":false,"外注協力":false},
   /* 送信履歴から直す・消すとき */
   mode:"new", editBatch:null, editYm:null, editAt:"", editB:null, orig:null,
+  /* 班の常任から自動で入れたメンバー（まだ自分でえらんでいないかを見るため） */
+  selAuto:[],
   /* 直しているとき、その日報を最初に送った人。空なら今の端末の名前を入れる */
   sentBy:"",
   delB:null, flash:"",
@@ -1004,7 +1011,35 @@ function renderAll(){
 }
 
 /* ---- 日付 ---- */
-function renderDate(){ document.getElementById("fDate").textContent=dLabel(S.date); }
+function renderDate(){
+  document.getElementById("fDate").textContent=dLabel(S.date);
+  document.getElementById("fDateWarn").textContent=S.date===todayStr()?"":"今日ではありません";
+}
+
+/* ---- アプリが前に出てきたとき ----
+   ホーム画面のアプリは、閉じずに残しておくと、前の日の画面のまま出てくることがある。
+   開いていた日から日付が変わっていて、まだ入力をはじめていなければ、日付を今日にもどす。
+   入力の途中なら日付は変えない（日付の下に黄色で「今日ではありません」が出る） */
+let shownDay=todayStr();
+function notStarted(){
+  if(S.mode==="edit" || S.job || S.jobFree) return false;
+  if(totalOf(S.all) || Object.keys(S.ovr).length || S.off.length) return false;
+  if(["scStep2","scConfirm","scDone"].some(id=>document.getElementById(id).classList.contains("on"))) return false;
+  /* メンバーは、班の常任から自動で入っただけなら、まだえらんでいないことにする */
+  const a=S.sel.slice().sort().join("|"), b=(S.selAuto||[]).slice().sort().join("|");
+  return !S.sel.length || a===b;
+}
+function onResume(){
+  if(document.visibilityState==="hidden") return;
+  const t=todayStr();
+  if(t===shownDay) return;
+  shownDay=t;
+  if(S.date!==t && notStarted()){ S.date=t; S.calY=0; }
+  renderAll();
+}
+document.addEventListener("visibilitychange", onResume);
+window.addEventListener("pageshow", onResume);
+window.addEventListener("focus", onResume);
 function pickToday(){ S.date=todayStr(); closeSheet(); renderAll(); }
 function pickYesterday(){
   const d=new Date(); d.setDate(d.getDate()-1);
@@ -1361,6 +1396,7 @@ function applyTeam(){
     if(S.ks) ksNames().forEach(n=>{
       if(S.sel.indexOf(n)<0 && !S.off.some(o=>o.name===n)) S.sel=S.sel.concat([n]);
     });
+    S.selAuto=S.sel.slice();
   }
 }
 
@@ -1911,6 +1947,7 @@ function resetInput(){
   S.checks={出張:false,夜勤:false}; S.late={}; S.early={};
   S.ks=false; S.kan=null; S.kanNone=false; S.shiki=[]; S.ksAuto=[]; S.ksAsked=false; S.ksAll=false;
   if(!S.kubun) S.kubun="現場";
+  S.selAuto=[];
   applyTeam();
 }
 function finishSend(){ resetInput(); goTop(); }
