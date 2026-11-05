@@ -997,7 +997,8 @@ function boot(){
   db.ref("master/seen").on("value", s=>{ SEEN = s.val()||{}; render(); });
   /* 修正履歴は日報管理でしか使いません */
   if(MODE==="full")
-    db.ref("log").on("value", s=>{ const v=s.val()||{}; LOG=Object.keys(v).map(k=>v[k]); render(); });
+    /* 並べるのに使うので、push のキー（_k）も持たせる。中身（t など）はそのまま */
+    db.ref("log").on("value", s=>{ const v=s.val()||{}; LOG=Object.keys(v).map(k=>Object.assign({_k:k}, v[k])); render(); });
   db.ref("nippo").on("value", s=>{
     ALLDATA = s.val() || {};
     const ms = Object.keys(ALLDATA).sort().reverse();
@@ -3279,7 +3280,10 @@ function doMemSave(act){
 
 /* ---- 修正履歴 ---- */
 function renderLog(){
-  const list = LOG.slice().sort((a,b)=>String(b.t).localeCompare(String(a.t)));
+  /* 新しい順。t（"11/5 11:04"）は年がなく、文字の順では 9月が11月より上に来るので使わない。
+     push のキーは書いた順に大きくなる（文字コードの順）ので、キーで並べる。
+     localeCompare は「-」「_」や大文字・小文字の順が変わるので使わない */
+  const list = LOG.slice().sort((a,b)=>a._k < b._k ? 1 : a._k > b._k ? -1 : 0);
   document.getElementById("logTable").innerHTML = list.length ? (
     '<thead><tr><th style="width:110px">日時</th><th style="width:120px">直した人</th>'+
     '<th>直した内容</th><th style="width:200px">理由</th></tr></thead><tbody>'+
