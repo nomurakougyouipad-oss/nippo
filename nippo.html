@@ -591,6 +591,20 @@
   <button class="btn o sm" style="margin-top:10px" onclick="closeSheet()">やめる</button>
 </div>
 
+<!-- 送信履歴の「同じ内容で送る」。押したら、まずここで確かめる（消すのシートと同じ形） -->
+<div class="sheet" id="shCopy">
+  <h2>同じ内容で、新しく送ります</h2>
+  <div style="font-size:15px;color:var(--muted)" id="cpDate"></div>
+  <div style="font-size:19px;font-weight:600;margin-top:4px" id="cpJob"></div>
+  <div style="font-size:14px;color:var(--faint);margin-top:6px" id="cpSum"></div>
+  <div class="lbl">新しい日付</div>
+  <div style="font-size:24px;font-weight:700" id="cpNew"></div>
+  <div class="dwarn" id="cpWarn"></div>
+  <div class="note">日付・人・時間は、次の画面で変えられます。最後にもう一度確認があります。</div>
+  <button class="btn" style="margin-top:16px" onclick="doCopy()">この内容で入力に進む</button>
+  <button class="btn o sm" style="margin-top:10px" onclick="closeSheet()">やめる</button>
+</div>
+
 <!-- 平日の時間が1日の上限を超えるときは送らない。閉じると確認画面に戻る（入力はそのまま） -->
 <div class="sheet" id="shOver">
   <h2>送れません</h2>
@@ -669,6 +683,8 @@ let S = {
   /* 直しているとき、その日報を最初に送った人。空なら今の端末の名前を入れる */
   sentBy:"",
   delB:null, flash:"",
+  /* 「同じ内容で送る」の確認シートで、もとにしている送信 */
+  cpB:null,
   /* 監督・指揮者モード。kan＝監督、kanNone＝「監督なし（指揮者だけ）」を押した、shiki＝指揮者（何人でも）、
      ksAuto＝そのために自動でメンバーに入れた人。
      ksAsked＝「監督・指揮者の現場ではないですか？」に「このまま職長で送る」と答えた。ksAll＝○の無い人も出す */
@@ -961,7 +977,7 @@ document.getElementById("meSearch").addEventListener("input", renderMeList);
 let openedSheet=null;
 function openSheet(name){
   const map={cal:"shCal",foreman:"shForeman",job:"shJob",member:"shMember",off:"shOff",pad:"shPad",
-             close:"shClose",del:"shDel",over:"shOver",ks:"shKs",ksask:"shKsAsk"};
+             close:"shClose",del:"shDel",copy:"shCopy",over:"shOver",ks:"shKs",ksask:"shKsAsk"};
   const id=map[name]; if(!id) return;
   openedSheet=id;
   document.getElementById(id).classList.add("on");
@@ -2021,7 +2037,7 @@ function renderHist(){
   document.querySelectorAll("#histList [data-dl]").forEach(b=>{
     b.onclick=()=>askDelete(Number(b.dataset.dl)); });
   document.querySelectorAll("#histList [data-cp]").forEach(b=>{
-    b.onclick=()=>startCopy(Number(b.dataset.cp)); });
+    b.onclick=()=>askCopy(Number(b.dataset.cp)); });
 }
 
 /* ---- 送信済みの1件を入力画面に読み込む ---- */
@@ -2067,17 +2083,48 @@ function startEdit(i){
   S.orig=rowsSnap(b.rows);
   showScreen("scStep1"); renderAll();
 }
-function startCopy(i){
+/* ---- 同じ内容で送る ----
+   押したら、まず確認のシート（shCopy）を出す。「この内容で入力に進む」で入力画面へ（流れは今までどおり） */
+/* 新しい日付は翌日。先の日付は送れないので今日までにする */
+function copyDate(b){
+  const d=new Date(b.rows[0].d+"T00:00:00"); d.setDate(d.getDate()+1);
+  const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  return ds>todayStr() ? todayStr() : ds;
+}
+function askCopy(i){
   const b=HIST[i]; if(!b) return;
+  S.cpB=b;
+  const r=b.rows[0], work=b.rows.filter(x=>!x.off);
+  document.getElementById("cpDate").textContent=dLabel(r.d);
+  document.getElementById("cpJob").textContent=(r.no?r.no+"　":"")+(r.j||"");
+  document.getElementById("cpSum").textContent=(r.kubun||"")+" ／ "+work.length+"人 ／ 合計 "+
+    f1(work.reduce((a,x)=>a+netOf(x),0))+"時間"+
+    (b.rows.length>work.length?" ／ 休み "+(b.rows.length-work.length)+"人":"");
+  const ds=copyDate(b), nd=new Date(ds+"T00:00:00");
+  document.getElementById("cpNew").textContent=(nd.getMonth()+1)+"月"+nd.getDate()+"日（"+WD[nd.getDay()]+"）";
+  /* その日に、同じ注番（注番なしなら同じ件名）の日報をもう送っていたら、黄色で知らせる。
+     2回目の現場もあるので、止めはしない。さがすのは手元の送信履歴（HIST）だけ */
+  const same=x=>r.no ? x.no===r.no : (!x.no && (x.j||"")===(r.j||""));
+  const dup=HIST.filter(x=>x.rows[0].d===ds && same(x.rows[0]));
+  const names=[...new Set(dup.reduce((a,x)=>a.concat(x.rows.filter(y=>!y.off).map(y=>y.n)),[]))];
+  document.getElementById("cpWarn").textContent=dup.length
+    ? dShort(ds)+"には、もう"+(r.no?" "+r.no+" ":"「"+(r.j||"")+"」")+"の日報を送っています"+
+      (names.length?"（"+names.slice(0,2).join("・")+(names.length>2?" ほか"+(names.length-2)+"人":"")+"）":"")
+    : "";
+  openSheet("copy");
+}
+function doCopy(){
+  const b=S.cpB;
+  closeSheet();
+  if(b) startCopy(b);
+}
+function startCopy(b){
+  if(!b) return;
   S.flash="";
   loadBatch(b);
   S.mode="new"; S.editB=null; S.editBatch=null; S.editYm=null; S.editAt=""; S.orig=null;
   S.sentBy="";   /* 新しい送信なので、送った人は今この端末を使っている人になる */
-  /* 日付は翌日。先の日付は送れないので今日までにする */
-  const d=new Date(b.rows[0].d+"T00:00:00"); d.setDate(d.getDate()+1);
-  let ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-  if(ds>todayStr()) ds=todayStr();
-  S.date=ds;
+  S.date=copyDate(b);
   showScreen("scStep1"); renderAll();
 }
 
