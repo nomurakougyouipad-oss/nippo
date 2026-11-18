@@ -368,6 +368,7 @@
         <div class="nm" id="fJobNm"></div>
         <div class="hint">タップして選び直す</div>
       </button>
+      <div class="dwarn" id="fJobWarn"></div>
     </div>
     <div class="sec">
       <div class="step">4 ── 区分</div>
@@ -427,6 +428,9 @@
   <div class="wrap">
     <div class="note" style="margin-top:0" id="cfmLead">この内容で送ります</div>
     <h1 class="big" style="font-size:30px" id="cfmDate"></h1>
+    <!-- 「同じ内容で送る」から来たときだけ：日付を変えるボタンと、同じ日・同じ注番の黄色い注意 -->
+    <button class="chip sm" id="cfmDateBtn" style="display:none;margin-top:8px" onclick="openSheet('cal')">日付を変える</button>
+    <div class="dwarn" id="cfmDup"></div>
     <dl class="cfm" id="cfmBox" style="margin-top:22px"></dl>
     <div id="cfmKs"></div>
     <div class="cfmtot"><span class="l" id="cfmPeople"></span><span class="v" id="cfmTotal"></span></div>
@@ -591,19 +595,6 @@
   <button class="btn o sm" style="margin-top:10px" onclick="closeSheet()">やめる</button>
 </div>
 
-<!-- 送信履歴の「同じ内容で送る」。押したら、まずここで確かめる（消すのシートと同じ形） -->
-<div class="sheet" id="shCopy">
-  <h2>同じ内容で、新しく送ります</h2>
-  <div style="font-size:15px;color:var(--muted)" id="cpDate"></div>
-  <div style="font-size:19px;font-weight:600;margin-top:4px" id="cpJob"></div>
-  <div style="font-size:14px;color:var(--faint);margin-top:6px" id="cpSum"></div>
-  <div class="lbl">新しい日付</div>
-  <div style="font-size:24px;font-weight:700" id="cpNew"></div>
-  <div class="dwarn" id="cpWarn"></div>
-  <div class="note">日付・人・時間は、次の画面で変えられます。最後にもう一度確認があります。</div>
-  <button class="btn" style="margin-top:16px" onclick="doCopy()">この内容で入力に進む</button>
-  <button class="btn o sm" style="margin-top:10px" onclick="closeSheet()">やめる</button>
-</div>
 
 <!-- 平日の時間が1日の上限を超えるときは送らない。閉じると確認画面に戻る（入力はそのまま） -->
 <div class="sheet" id="shOver">
@@ -683,8 +674,8 @@ let S = {
   /* 直しているとき、その日報を最初に送った人。空なら今の端末の名前を入れる */
   sentBy:"",
   delB:null, flash:"",
-  /* 「同じ内容で送る」の確認シートで、もとにしている送信 */
-  cpB:null,
+  /* 送信履歴の「同じ内容で送る」から来た（確認画面に「日付を変える」と、同じ日・同じ注番の注意を出す） */
+  fromCopy:false,
   /* 監督・指揮者モード。kan＝監督、kanNone＝「監督なし（指揮者だけ）」を押した、shiki＝指揮者（何人でも）、
      ksAuto＝そのために自動でメンバーに入れた人。
      ksAsked＝「監督・指揮者の現場ではないですか？」に「このまま職長で送る」と答えた。ksAll＝○の無い人も出す */
@@ -977,7 +968,7 @@ document.getElementById("meSearch").addEventListener("input", renderMeList);
 let openedSheet=null;
 function openSheet(name){
   const map={cal:"shCal",foreman:"shForeman",job:"shJob",member:"shMember",off:"shOff",pad:"shPad",
-             close:"shClose",del:"shDel",copy:"shCopy",over:"shOver",ks:"shKs",ksask:"shKsAsk"};
+             close:"shClose",del:"shDel",over:"shOver",ks:"shKs",ksask:"shKsAsk"};
   const id=map[name]; if(!id) return;
   openedSheet=id;
   document.getElementById(id).classList.add("on");
@@ -1023,6 +1014,7 @@ function renderAll(){
   renderKsBar();
   if(document.getElementById("scJobs").classList.contains("on")) renderJobsPage();
   if(document.getElementById("scHist").classList.contains("on")) renderHist();
+  if(document.getElementById("scConfirm").classList.contains("on")) renderConfirm();
   document.getElementById("ttStep1").textContent=S.mode==="edit"?"送った日報を直す":"日報を送る";
 }
 
@@ -1310,6 +1302,13 @@ function renderJob(){
   document.getElementById("fJobNo").className="no"+(S.job?"":" none");
   document.getElementById("fJobNm").textContent=j?j.name:(S.jobFree||"");
   document.getElementById("cJob").classList.toggle("on",!!(S.job||S.jobFree));
+  document.getElementById("fJobWarn").textContent=jobClosedNow()
+    ? "この工事（"+S.job+"）は閉じています。上をタップして、工事を選び直してください。" : "";
+}
+/* 新しく送るのに、閉じた工事（または注番一覧にない工事）が入っているか。
+   「同じ内容で送る」で前の日報を読みこんだときに起きる。選び直すまで先へは進めない（直すときは別） */
+function jobClosedNow(){
+  return S.mode!=="edit" && !!S.job && !openJobs().some(j=>j.no===S.job);
 }
 function renderJobSheet(){
   const tabs=[{k:"fixed",l:"常設"},{k:"no",l:"注番あり"},{k:"free",l:"注番なし"},{k:"new",l:"新しい件名"}];
@@ -1697,6 +1696,7 @@ function renderStepBtns(){
 function canStep2(){
   /* 監督・指揮者モードは、監督・指揮者（ksReady）と3つの現場のどれか、がそろってから */
   if(S.ks && !(ksReady() && KS_KUBUN.indexOf(S.kubun)>=0)) return false;
+  if(jobClosedNow()) return false;
   return !!((S.job||S.jobFree) && (S.sel.length || (S.mode==="edit" && S.off.length)));
 }
 function canSend(){
@@ -1788,6 +1788,11 @@ function resetPerson(){
 /* ================== 確認 ================== */
 function goConfirm(){
   if(!canSend()) return;
+  renderConfirm();
+  showScreen("scConfirm");
+}
+/* 確認画面の中身を描く（カレンダーで日付を変えたときなども、ここで描き直す） */
+function renderConfirm(){
   const jobName=S.job?(JOBS.find(j=>j.no===S.job)||{}).name:S.jobFree;
   document.getElementById("cfmDate").textContent=dLabel(S.date);
   const chk=CHECKS.filter(k=>S.checks[k]).join("・")||"なし";
@@ -1828,7 +1833,10 @@ function goConfirm(){
   document.getElementById("btnSend").textContent=ed?"この内容で直す":"送信する";
   document.getElementById("cfmWhy").style.display=ed?"block":"none";
   if(!ed) document.getElementById("cfmWhyIn").value="";
-  showScreen("scConfirm");
+  /* 「同じ内容で送る」から来たときだけ、日付を変えるボタンと、同じ日・同じ注番の注意を出す */
+  const cp=S.fromCopy && !ed;
+  document.getElementById("cfmDateBtn").style.display=cp?"inline-block":"none";
+  document.getElementById("cfmDup").textContent=cp?dupNote():"";
 }
 
 /* ================== 送信 ================== */
@@ -1952,6 +1960,7 @@ function continueNext(){
   S.checks={出張:false,夜勤:false}; S.late={}; S.early={};
   /* 監督・指揮者はそのまま。次の1件はまた現場が変わるかもしれないので、押し忘れの確認はやり直す */
   S.ksAsked=false;
+  S.fromCopy=false;
   showScreen("scStep1"); renderAll();
 }
 /* 入力をまっさらに戻す（直している最中のしるしも消す） */
@@ -1964,6 +1973,7 @@ function resetInput(){
   S.ks=false; S.kan=null; S.kanNone=false; S.shiki=[]; S.ksAuto=[]; S.ksAsked=false; S.ksAll=false;
   if(!S.kubun) S.kubun="現場";
   S.selAuto=[];
+  S.fromCopy=false;
   applyTeam();
 }
 function finishSend(){ resetInput(); goTop(); }
@@ -2037,7 +2047,7 @@ function renderHist(){
   document.querySelectorAll("#histList [data-dl]").forEach(b=>{
     b.onclick=()=>askDelete(Number(b.dataset.dl)); });
   document.querySelectorAll("#histList [data-cp]").forEach(b=>{
-    b.onclick=()=>askCopy(Number(b.dataset.cp)); });
+    b.onclick=()=>startCopy(Number(b.dataset.cp)); });
 }
 
 /* ---- 送信済みの1件を入力画面に読み込む ---- */
@@ -2077,55 +2087,44 @@ function startEdit(i){
   const b=HIST[i]; if(!b) return;
   S.flash="";
   loadBatch(b);
-  S.mode="edit"; S.editB=b; S.editBatch=b.batch;
+  S.mode="edit"; S.editB=b; S.editBatch=b.batch; S.fromCopy=false;
   S.editYm=String(b.rows[0].d).slice(0,7);
   S.editAt=b.rows[0].at||"";
   S.orig=rowsSnap(b.rows);
   showScreen("scStep1"); renderAll();
 }
 /* ---- 同じ内容で送る ----
-   押したら、まず確認のシート（shCopy）を出す。「この内容で入力に進む」で入力画面へ（流れは今までどおり） */
+   押したら、入力画面をとばして、すぐ「送信前の確認」画面を出す。中身はもとの日報と同じ、日付は翌日。
+   変えたいときは、確認画面の「戻る」「直す（入力に戻る）」で入力画面に戻れる（読みこんだ中身はそのまま）。
+   すぐ確認にできない（工事が閉じた・時間が0 など）ときは、今までどおり入力画面に入れて、足りないところを出す */
 /* 新しい日付は翌日。先の日付は送れないので今日までにする */
 function copyDate(b){
   const d=new Date(b.rows[0].d+"T00:00:00"); d.setDate(d.getDate()+1);
   const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   return ds>todayStr() ? todayStr() : ds;
 }
-function askCopy(i){
+function startCopy(i){
   const b=HIST[i]; if(!b) return;
-  S.cpB=b;
-  const r=b.rows[0], work=b.rows.filter(x=>!x.off);
-  document.getElementById("cpDate").textContent=dLabel(r.d);
-  document.getElementById("cpJob").textContent=(r.no?r.no+"　":"")+(r.j||"");
-  document.getElementById("cpSum").textContent=(r.kubun||"")+" ／ "+work.length+"人 ／ 合計 "+
-    f1(work.reduce((a,x)=>a+netOf(x),0))+"時間"+
-    (b.rows.length>work.length?" ／ 休み "+(b.rows.length-work.length)+"人":"");
-  const ds=copyDate(b), nd=new Date(ds+"T00:00:00");
-  document.getElementById("cpNew").textContent=(nd.getMonth()+1)+"月"+nd.getDate()+"日（"+WD[nd.getDay()]+"）";
-  /* その日に、同じ注番（注番なしなら同じ件名）の日報をもう送っていたら、黄色で知らせる。
-     2回目の現場もあるので、止めはしない。さがすのは手元の送信履歴（HIST）だけ */
-  const same=x=>r.no ? x.no===r.no : (!x.no && (x.j||"")===(r.j||""));
-  const dup=HIST.filter(x=>x.rows[0].d===ds && same(x.rows[0]));
-  const names=[...new Set(dup.reduce((a,x)=>a.concat(x.rows.filter(y=>!y.off).map(y=>y.n)),[]))];
-  document.getElementById("cpWarn").textContent=dup.length
-    ? dShort(ds)+"には、もう"+(r.no?" "+r.no+" ":"「"+(r.j||"")+"」")+"の日報を送っています"+
-      (names.length?"（"+names.slice(0,2).join("・")+(names.length>2?" ほか"+(names.length-2)+"人":"")+"）":"")
-    : "";
-  openSheet("copy");
-}
-function doCopy(){
-  const b=S.cpB;
-  closeSheet();
-  if(b) startCopy(b);
-}
-function startCopy(b){
-  if(!b) return;
   S.flash="";
   loadBatch(b);
   S.mode="new"; S.editB=null; S.editBatch=null; S.editYm=null; S.editAt=""; S.orig=null;
   S.sentBy="";   /* 新しい送信なので、送った人は今この端末を使っている人になる */
-  S.date=copyDate(b);
-  showScreen("scStep1"); renderAll();
+  S.date=copyDate(b); S.calY=0;
+  S.fromCopy=true;
+  renderAll();   /* 入力画面にも中身を入れておく（確認画面から戻ったときのため） */
+  if(canSend()) goConfirm();
+  else showScreen("scStep1");
+}
+/* その日に、同じ注番（注番なしなら同じ件名）の日報を、この端末からもう送っていたら、黄色で出す文を返す。
+   2回目の現場もあるので、止めはしない。さがすのは手元の送信履歴（直近1か月）だけ */
+function dupNote(){
+  const no=S.job||"", j=no?"":(S.jobFree||"");
+  const same=x=>no ? x.no===no : (!x.no && (x.j||"")===j);
+  const dup=myBatches().filter(b=>b.rows[0].d===S.date && same(b.rows[0]));
+  if(!dup.length) return "";
+  const names=[...new Set(dup.reduce((a,b)=>a.concat(b.rows.filter(y=>!y.off).map(y=>y.n)),[]))];
+  return dShort(S.date)+"には、もう"+(no?" "+no+" ":"「"+j+"」")+"の日報を送っています"+
+    (names.length?"（"+names.slice(0,2).join("・")+(names.length>2?" ほか"+(names.length-2)+"人":"")+"）":"");
 }
 
 /* ---- 直した中身を見比べて、修正履歴に書く文にする ---- */
